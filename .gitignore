@@ -1,7 +1,5 @@
-# Local agent guidance; do not publish it with the project.
 AGENT.md
 
-# Gradle and IDE output.
 .gradle/
 build/
 .idea/
