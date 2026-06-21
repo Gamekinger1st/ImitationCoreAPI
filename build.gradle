@@ -45,7 +45,6 @@ neoForge {
 }
 
 dependencies {
-    // Integrations such as GeckoLib and Tensura belong in optional compatibility modules.
 }
 
 tasks.named('processResources', ProcessResources).configure {
