@@ -16,6 +16,7 @@ base {
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 repositories {
+    mavenCentral()
     maven { url = 'https://www.cursemaven.com' }
     maven { url = 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/' }
     maven { url = 'https://maven.architectury.dev/' }
@@ -45,6 +46,11 @@ neoForge {
 }
 
 dependencies {
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation files(sourceSets.main.compileClasspath)
+    testRuntimeOnly files(sourceSets.main.runtimeClasspath)
 }
 
 tasks.named('processResources', ProcessResources).configure {
@@ -68,4 +74,26 @@ tasks.named('processResources', ProcessResources).configure {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+}
+
+def publicApiSources = layout.projectDirectory.dir('src/main/java/com/github/gamekinger1st/imitationcoreapi/api').asFileTree.matching {
+    include '**/*.java'
+}
+
+tasks.register('verifyPublicApiBoundary') {
+    inputs.files(publicApiSources)
+    doLast {
+        def violations = inputs.files.files.findAll { source -> source.getText('UTF-8').contains('.imitationcoreapi.internal.') }
+        if (!violations.isEmpty()) {
+            throw new GradleException("Public API sources must not depend on internal implementation packages: ${violations*.path.join(', ')}")
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn(tasks.named('verifyPublicApiBoundary'))
 }
