@@ -64,11 +64,32 @@ final class DiscordMessageParser {
         Optional<String> messageId = string(message, "id").filter(DiscordMessageParser::isSnowflake);
         Optional<String> authorId = string(author, "id").filter(DiscordMessageParser::isSnowflake);
         Optional<String> authorName = string(author, "global_name").or(() -> string(author, "username"));
-        Optional<String> content = string(message, "content");
+        Optional<String> content = messageContent(message);
         if (messageId.isEmpty() || authorId.isEmpty() || authorName.isEmpty() || content.isEmpty()) {
             return Optional.empty();
         }
         return Optional.of(new DiscordInboundMessage(messageId.get(), authorId.get(), authorName.get(), content.get()));
+    }
+
+    private static Optional<String> messageContent(JsonObject message) {
+        List<String> parts = new ArrayList<>();
+        if (message.get("referenced_message") instanceof JsonObject referenced) {
+            String replyAuthor = referenced.get("author") instanceof JsonObject author
+                    ? string(author, "global_name").or(() -> string(author, "username")).orElse("unknown")
+                    : "unknown";
+            string(referenced, "content").ifPresent(content -> parts.add("[reply to " + replyAuthor + ": " + content + "]"));
+        }
+        string(message, "content").ifPresent(parts::add);
+        JsonElement attachments = message.get("attachments");
+        if (attachments != null && attachments.isJsonArray()) {
+            for (JsonElement element : attachments.getAsJsonArray()) {
+                if (element.isJsonObject()) {
+                    string(element.getAsJsonObject(), "url").ifPresent(parts::add);
+                }
+            }
+        }
+        String joined = String.join(" ", parts).strip();
+        return joined.isEmpty() ? Optional.empty() : Optional.of(joined);
     }
 
     private static Optional<String> string(JsonObject object, String member) {

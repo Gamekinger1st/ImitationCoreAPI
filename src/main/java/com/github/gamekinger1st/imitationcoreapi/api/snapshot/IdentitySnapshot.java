@@ -37,7 +37,6 @@ public record IdentitySnapshot(
         entityData = entityData.copy();
         visualData = visualData.copy();
         extensions = List.copyOf(new ArrayList<>(extensions));
-        SnapshotLimits.DEFAULT.validateIdentity(displayName, entityData, visualData, extensions);
     }
 
     @Override

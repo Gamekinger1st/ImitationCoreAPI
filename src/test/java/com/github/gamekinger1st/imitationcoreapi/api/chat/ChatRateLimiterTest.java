@@ -18,4 +18,15 @@ class ChatRateLimiterTest {
         assertFalse(limiter.tryAcquire(playerId, 1_000L));
         assertTrue(limiter.tryAcquire(playerId, 1_000L + ChatRateLimiter.WINDOW_MILLIS));
     }
+
+    @Test
+    void recoversWhenTheWallClockMovesBackwards() {
+        ChatRateLimiter limiter = new ChatRateLimiter();
+        UUID playerId = UUID.randomUUID();
+        for (int index = 0; index < ChatRateLimiter.MAX_MESSAGES_PER_WINDOW; index++) {
+            assertTrue(limiter.tryAcquire(playerId, 10_000L));
+        }
+
+        assertTrue(limiter.tryAcquire(playerId, 1_000L));
+    }
 }

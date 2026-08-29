@@ -1,5 +1,6 @@
 package com.github.gamekinger1st.imitationcoreapi.api.imitator;
 
+import com.github.gamekinger1st.imitationcoreapi.api.ImitationApi;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import com.github.gamekinger1st.imitationcoreapi.api.diagnostic.ImitationDiagnostics;
@@ -77,6 +78,11 @@ public final class ImitatorSkillController {
 
     public void tickFormTraits(ServerPlayer player) {
         Objects.requireNonNull(player, "player");
+        Optional<SessionTransitionResult> removed = handlers.revertIfControllerSkillMissing(player);
+        if (removed.isPresent()) {
+            removed.get().session().ifPresent(session -> synchronizer.syncSession(player, session));
+            return;
+        }
         Optional<SessionTransitionResult> expired = handlers.expireTransformDuration(player);
         if (expired.isPresent()) {
             expired.get().session().ifPresent(session -> synchronizer.syncSession(player, session));
@@ -92,10 +98,20 @@ public final class ImitatorSkillController {
     public void openMenu(ServerPlayer player, ImitatorMenuRequest request) {
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(request, "request");
+        ImitationApi.imitatorMenuContinuations().clear(player.getUUID());
         if (request != ImitatorMenuRequest.NONE) {
             synchronizer.syncFormLibrary(player);
             synchronizer.openMenu(player, request);
         }
+    }
+
+    public void openMenu(ServerPlayer player, ImitatorMenuRequest request, ImitatorMenuContinuation continuation) {
+        Objects.requireNonNull(player, "player");
+        Objects.requireNonNull(request, "request");
+        Objects.requireNonNull(continuation, "continuation");
+        ImitationApi.imitatorMenuContinuations().stage(player, request, mode(player), continuation);
+        synchronizer.syncFormLibrary(player);
+        synchronizer.openMenu(player, request);
     }
 
     public SessionTransitionResult revert(ServerPlayer player) {
@@ -175,7 +191,8 @@ public final class ImitatorSkillController {
                         definition.skillCopyPolicy(),
                         mastery >= definition.maximumMastery(),
                         definition.skillId(),
-                        definition.transformDurationPolicy()
+                        definition.transformDurationPolicy(),
+                        definition.transformationModifiers()
                 );
                 int reward = outcome.progression()
                         .map(progression -> definition.progressionPolicy().masteryReward(ImitatorProgressionAction.TRANSFORM, progression.becamePerfect()))

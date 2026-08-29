@@ -15,7 +15,8 @@ public record ImitatorReplicaPolicy(
         boolean suppressExperience,
         boolean persistentMob,
         boolean targetOwner,
-        String namePrefix
+        String namePrefix,
+        boolean copyRecordedSkills
 ) {
     public static final ImitatorReplicaPolicy DEFAULT = new ImitatorReplicaPolicy(
             3_600,
@@ -26,10 +27,15 @@ public record ImitatorReplicaPolicy(
             true,
             true,
             true,
-            true,
-            true,
-            "Replica: "
+            false,
+            false,
+            "Replica: ",
+            true
     );
+
+    public ImitatorReplicaPolicy(int lifetimeTicks, double spawnDistance, double cleanupDistance, boolean fallbackPlayerForms, boolean copyEntityNbt, boolean copyTensuraState, boolean suppressDrops, boolean suppressExperience, boolean persistentMob, boolean targetOwner, String namePrefix) {
+        this(lifetimeTicks, spawnDistance, cleanupDistance, fallbackPlayerForms, copyEntityNbt, copyTensuraState, suppressDrops, suppressExperience, persistentMob, targetOwner, namePrefix, true);
+    }
 
     public ImitatorReplicaPolicy {
         if (lifetimeTicks <= 0 || lifetimeTicks > 72_000) {
@@ -61,6 +67,7 @@ public record ImitatorReplicaPolicy(
         tag.putBoolean("persistent_mob", persistentMob);
         tag.putBoolean("target_owner", targetOwner);
         tag.putString("name_prefix", namePrefix);
+        tag.putBoolean("copy_recorded_skills", copyRecordedSkills);
         return tag;
     }
 
@@ -79,7 +86,8 @@ public record ImitatorReplicaPolicy(
                 tag.contains("suppress_experience") ? tag.getBoolean("suppress_experience") : DEFAULT.suppressExperience,
                 tag.contains("persistent_mob") ? tag.getBoolean("persistent_mob") : DEFAULT.persistentMob,
                 tag.contains("target_owner") ? tag.getBoolean("target_owner") : DEFAULT.targetOwner,
-                tag.contains("name_prefix") ? tag.getString("name_prefix") : DEFAULT.namePrefix
+                tag.contains("name_prefix") ? tag.getString("name_prefix") : DEFAULT.namePrefix,
+                tag.contains("copy_recorded_skills") ? tag.getBoolean("copy_recorded_skills") : DEFAULT.copyRecordedSkills
         );
     }
 }

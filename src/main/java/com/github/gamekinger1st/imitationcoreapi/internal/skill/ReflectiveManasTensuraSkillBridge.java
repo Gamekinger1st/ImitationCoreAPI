@@ -119,19 +119,57 @@ public final class ReflectiveManasTensuraSkillBridge implements SkillBridge {
         }
         try {
             Object storage = skillStorage(entity);
-            for (SkillState state : snapshot.skills()) {
-                Object optional = method(storage.getClass(), "getSkill", 1).invoke(storage, state.skillId());
-                if (optional instanceof Optional<?> existing && existing.isPresent()) {
-                    Object instance = existing.get();
-                    method(instance.getClass(), "deserialize", 1).invoke(instance, state.serializedData());
-                    method(storage.getClass(), "updateSkill", 2).invoke(storage, instance, true);
-                    continue;
+            java.util.Set<ResourceLocation> expected = snapshot.skills().stream().map(SkillState::skillId).collect(java.util.stream.Collectors.toSet());
+            for (ResourceLocation current : learnedSkillIds(storage)) {
+                if (!expected.contains(current)) {
+                    SkillOperationResult removed = removeSkill(entity, current);
+                    if (!removed.successful()) {
+                        return removed;
+                    }
                 }
-                Class<?> instanceClass = Class.forName("io.github.manasmods.manascore.skill.api.ManasSkillInstance", false, entity.getClass().getClassLoader());
-                Object instance = instanceClass.getMethod("fromNBT", CompoundTag.class).invoke(null, state.serializedData());
-                learn(storage, instance);
+            }
+            for (SkillState state : snapshot.skills()) {
+                SkillOperationResult restored = restoreSkill(entity, state);
+                if (!restored.successful()) {
+                    return restored;
+                }
             }
             return SkillOperationResult.success();
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException exception) {
+            return SkillOperationResult.failure(exception.getClass().getSimpleName());
+        }
+    }
+
+    @Override
+    public SkillOperationResult restoreSkill(LivingEntity entity, SkillState state) {
+        try {
+            Object storage = skillStorage(entity);
+            Object optional = method(storage.getClass(), "getSkill", 1).invoke(storage, state.skillId());
+            if (optional instanceof Optional<?> existing && existing.isPresent()) {
+                Object instance = existing.get();
+                method(instance.getClass(), "deserialize", 1).invoke(instance, state.serializedData());
+                method(storage.getClass(), "updateSkill", 2).invoke(storage, instance, true);
+                return SkillOperationResult.success();
+            }
+            Class<?> instanceClass = Class.forName("io.github.manasmods.manascore.skill.api.ManasSkillInstance", false, entity.getClass().getClassLoader());
+            Object instance = instanceClass.getMethod("fromNBT", CompoundTag.class).invoke(null, state.serializedData());
+            return learn(storage, instance)
+                    ? SkillOperationResult.success()
+                    : SkillOperationResult.failure("The skill storage rejected the restored skill");
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException exception) {
+            return SkillOperationResult.failure(exception.getClass().getSimpleName());
+        }
+    }
+
+    @Override
+    public SkillOperationResult removeSkill(LivingEntity entity, ResourceLocation skillId) {
+        try {
+            Object storage = skillStorage(entity);
+            method(storage.getClass(), "forgetSkill", 2).invoke(storage, skillId, Component.literal("Imitation Core skill replacement"));
+            Object remaining = method(storage.getClass(), "getSkill", 1).invoke(storage, skillId);
+            return remaining instanceof Optional<?> after && after.isEmpty()
+                    ? SkillOperationResult.success()
+                    : SkillOperationResult.failure("The skill storage did not remove the skill");
         } catch (ReflectiveOperationException | LinkageError | RuntimeException exception) {
             return SkillOperationResult.failure(exception.getClass().getSimpleName());
         }
@@ -172,7 +210,7 @@ public final class ReflectiveManasTensuraSkillBridge implements SkillBridge {
             Object storage = skillStorage(entity);
             Object optional = method(storage.getClass(), "getSkill", 1).invoke(storage, skillId);
             if (!(optional instanceof Optional<?> skillOptional) || skillOptional.isEmpty()) {
-                return SkillOperationResult.failure("The temporary skill is no longer learned");
+                return SkillOperationResult.success();
             }
             Object instance = skillOptional.get();
             Object tag = method(instance.getClass(), "getTag", 0).invoke(instance);
@@ -232,6 +270,24 @@ public final class ReflectiveManasTensuraSkillBridge implements SkillBridge {
                 .orElseThrow(NoSuchMethodException::new);
         Object learned = learn.invoke(storage, instance, Component.literal("Imitation Core temporary skill"));
         return learned instanceof Boolean success && success;
+    }
+
+    private java.util.Set<ResourceLocation> learnedSkillIds(Object storage) throws ReflectiveOperationException {
+        Object learned = method(storage.getClass(), "getLearnedSkills", 0).invoke(storage);
+        if (!(learned instanceof Collection<?> skills)) {
+            throw new IllegalStateException("The skill storage did not expose learned skills");
+        }
+        java.util.LinkedHashSet<ResourceLocation> ids = new java.util.LinkedHashSet<>();
+        for (Object skill : skills) {
+            if (skill == null) {
+                continue;
+            }
+            Object id = method(skill.getClass(), "getSkillId", 0).invoke(skill);
+            if (id instanceof ResourceLocation skillId) {
+                ids.add(skillId);
+            }
+        }
+        return java.util.Set.copyOf(ids);
     }
 
     private Optional<SkillState> state(Object skill) {

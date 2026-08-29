@@ -6,5 +6,6 @@ public enum ImitatorAction {
     COMMIT_RECORD,
     SELECT_FORM,
     BEGIN_TRANSFORM,
-    REVERT
+    REVERT,
+    ACTIVATE_FORM_ABILITY
 }

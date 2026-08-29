@@ -4,6 +4,7 @@ import com.github.gamekinger1st.imitationcoreapi.api.adapter.ImitationAdapterReg
 import com.github.gamekinger1st.imitationcoreapi.api.application.TransformationApplicationRegistry;
 import com.github.gamekinger1st.imitationcoreapi.api.disguise.ClientDisguiseStateBus;
 import com.github.gamekinger1st.imitationcoreapi.api.disguise.ClientDisguiseStore;
+import com.github.gamekinger1st.imitationcoreapi.api.disguise.ClientReplicaVisualStore;
 import com.github.gamekinger1st.imitationcoreapi.api.disguise.DisguiseAnimationRegistry;
 import com.github.gamekinger1st.imitationcoreapi.api.disguise.DisguisePresentationRegistry;
 import com.github.gamekinger1st.imitationcoreapi.api.disguise.DisguiseRenderRegistry;
@@ -28,6 +29,7 @@ import com.github.gamekinger1st.imitationcoreapi.api.skill.SkillBridgeRegistry;
 import com.github.gamekinger1st.imitationcoreapi.api.skill.SkillClassificationOverrideRegistry;
 import com.github.gamekinger1st.imitationcoreapi.api.imitator.ImitatorFormAbilityRegistry;
 import com.github.gamekinger1st.imitationcoreapi.api.imitator.ImitatorIntegrationRegistry;
+import com.github.gamekinger1st.imitationcoreapi.api.imitator.ImitatorMenuContinuationRegistry;
 import com.github.gamekinger1st.imitationcoreapi.api.tensura.TensuraStateBridgeRegistry;
 import com.github.gamekinger1st.imitationcoreapi.api.targeting.MobFactionRegistry;
 
@@ -36,6 +38,7 @@ public final class ImitationApi {
     private static final TransformationApplicationRegistry TRANSFORMATION_APPLICATIONS = new TransformationApplicationRegistry();
     private static final ClientDisguiseStateBus CLIENT_DISGUISE_STATES = new ClientDisguiseStateBus();
     private static final ClientDisguiseStore CLIENT_DISGUISE_STORE = new ClientDisguiseStore();
+    private static final ClientReplicaVisualStore CLIENT_REPLICA_VISUALS = new ClientReplicaVisualStore();
     private static final DisguiseAnimationRegistry DISGUISE_ANIMATIONS = new DisguiseAnimationRegistry();
     private static final DisguisePresentationRegistry DISGUISE_PRESENTATIONS = new DisguisePresentationRegistry();
     private static final DisguiseRenderRegistry DISGUISE_RENDERERS = new DisguiseRenderRegistry();
@@ -59,6 +62,7 @@ public final class ImitationApi {
     private static final SkillClassificationOverrideRegistry SKILL_CLASSIFICATIONS = new SkillClassificationOverrideRegistry();
     private static final ImitatorFormAbilityRegistry IMITATOR_FORM_ABILITIES = new ImitatorFormAbilityRegistry();
     private static final ImitatorIntegrationRegistry IMITATOR_INTEGRATIONS = new ImitatorIntegrationRegistry();
+    private static final ImitatorMenuContinuationRegistry IMITATOR_MENU_CONTINUATIONS = new ImitatorMenuContinuationRegistry();
     private static final TensuraStateBridgeRegistry TENSURA_STATES = new TensuraStateBridgeRegistry();
     private static final RaceEditRegistry RACE_EDITS = new RaceEditRegistry();
     private static final MobFactionRegistry MOB_FACTIONS = new MobFactionRegistry();
@@ -90,6 +94,10 @@ public final class ImitationApi {
 
     public static ClientDisguiseStore clientDisguiseStore() {
         return CLIENT_DISGUISE_STORE;
+    }
+
+    public static ClientReplicaVisualStore clientReplicaVisuals() {
+        return CLIENT_REPLICA_VISUALS;
     }
 
     public static DisguiseAnimationRegistry disguiseAnimations() {
@@ -182,6 +190,10 @@ public final class ImitationApi {
 
     public static ImitatorIntegrationRegistry imitatorIntegrations() {
         return IMITATOR_INTEGRATIONS;
+    }
+
+    public static ImitatorMenuContinuationRegistry imitatorMenuContinuations() {
+        return IMITATOR_MENU_CONTINUATIONS;
     }
 
     public static TensuraStateBridgeRegistry tensuraStates() {

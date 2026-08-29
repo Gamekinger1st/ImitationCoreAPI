@@ -60,6 +60,7 @@ class ImitatorSkillDefinitionTest {
                 .formLibraryLimits(limits)
                 .copiedSkillPolicy(copiedSkillPolicy)
                 .transformDurationMinutes(5)
+                .forceAutoJump(true)
                 .perfectFormPolicy(ImitatorMirrorSyncPolicy.DEFAULT)
                 .replicaPolicy(replicaPolicy)
                 .build();
@@ -71,6 +72,7 @@ class ImitatorSkillDefinitionTest {
         assertEquals(limits, definition.formLibraryLimits());
         assertEquals(copiedSkillPolicy, definition.skillCopyPolicy());
         assertEquals(replicaPolicy, definition.replicaPolicy());
+        assertEquals(ImitatorAutoJumpOverride.FORCE_ENABLED, definition.transformationModifiers().autoJumpOverride());
     }
 
     @Test
@@ -88,6 +90,7 @@ class ImitatorSkillDefinitionTest {
         assertEquals(original.skillId(), clone.skillId());
         assertEquals(original.transformDurationPolicy(), clone.transformDurationPolicy());
         assertEquals(original.formLibraryLimits(), clone.formLibraryLimits());
+        assertEquals(original.transformationModifiers(), clone.transformationModifiers());
     }
 
     @Test

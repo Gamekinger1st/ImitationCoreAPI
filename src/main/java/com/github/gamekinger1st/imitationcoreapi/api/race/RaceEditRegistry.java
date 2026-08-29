@@ -1,5 +1,6 @@
 package com.github.gamekinger1st.imitationcoreapi.api.race;
 
+import com.github.gamekinger1st.imitationcoreapi.ImitationCoreApi;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -54,6 +55,7 @@ public final class RaceEditRegistry {
                 Optional<RaceEditProfile> edit = Objects.requireNonNull(provider.edit(context), "provider edit");
                 edit.filter(profile -> profile.raceId().equals(raceId)).ifPresent(builder::merge);
             } catch (RuntimeException | LinkageError exception) {
+                ImitationCoreApi.LOGGER.error("Race edit provider {} failed", provider.id(), exception);
             }
         }
         explicit(Optional.empty(), raceId).ifPresent(builder::merge);
@@ -82,6 +84,7 @@ public final class RaceEditRegistry {
                     return result;
                 }
             } catch (RuntimeException | LinkageError exception) {
+                ImitationCoreApi.LOGGER.error("Race function handler {} failed", handler.id(), exception);
             }
         }
         return RaceFunctionResult.pass();

@@ -25,6 +25,7 @@ import java.util.UUID;
 public final class OwnerSkillSuppressionService {
     public static final ResourceLocation HANDLER_ID = ResourceLocation.fromNamespaceAndPath(ImitationCoreApi.MOD_ID, "owner_skill_suppression");
     public static final String CONTROLLER_SKILLS_KEY = "controller_skills";
+    public static final int MAX_CONTROLLER_SKILLS = 128;
     private static final String DENIAL = "The owner's original skills are suppressed by the active copied form";
     private final TransformationService transformations;
 
@@ -71,6 +72,13 @@ public final class OwnerSkillSuppressionService {
                 .orElseGet(OwnerSkillUseDecision::allow);
     }
 
+    public boolean isSuppressing(LivingEntity owner) {
+        Objects.requireNonNull(owner, "owner");
+        return transformations.activeSessionForOwner(owner.getUUID())
+                .map(OwnerSkillSuppressionService::hasActiveSuppression)
+                .orElse(false);
+    }
+
     public static OwnerSkillUseDecision evaluate(TransformationSession session, ResourceLocation skillId, Optional<TemporarySkillOwnership> ownership) {
         Objects.requireNonNull(session, "session");
         Objects.requireNonNull(skillId, "skillId");
@@ -78,7 +86,7 @@ public final class OwnerSkillSuppressionService {
         if (suppressionReferences(session).isEmpty()) {
             return OwnerSkillUseDecision.allow();
         }
-        if (suppressionReferences(session).stream().anyMatch(reference -> controllerSkills(reference).contains(skillId))) {
+        if (suppressionReferences(session).stream().anyMatch(reference -> controllerSkillsOfReference(reference).contains(skillId))) {
             return OwnerSkillUseDecision.allow();
         }
         if (ownership.filter(value -> isBorrowedSkillOwnedBy(session, skillId, value)).isPresent()) {
@@ -88,7 +96,7 @@ public final class OwnerSkillSuppressionService {
     }
 
     private static boolean hasSuppressionMarker(TransformationSession session, Set<ResourceLocation> controllers) {
-        return suppressionReferences(session).stream().anyMatch(reference -> controllerSkills(reference).equals(controllers));
+        return suppressionReferences(session).stream().anyMatch(reference -> controllerSkillsOfReference(reference).equals(controllers));
     }
 
     private static boolean isBorrowedSkillOwnedBy(TransformationSession session, ResourceLocation skillId, TemporarySkillOwnership ownership) {
@@ -107,8 +115,8 @@ public final class OwnerSkillSuppressionService {
         for (ResourceLocation skillId : skillIds) {
             sanitized.add(Objects.requireNonNull(skillId, "controller skill id"));
         }
-        if (sanitized.size() > 32) {
-            throw new IllegalArgumentException("At most 32 controller skills can bypass owner skill suppression");
+        if (sanitized.size() > MAX_CONTROLLER_SKILLS) {
+            throw new IllegalArgumentException("At most " + MAX_CONTROLLER_SKILLS + " controller skills can bypass owner skill suppression");
         }
         return Set.copyOf(sanitized);
     }
@@ -121,7 +129,14 @@ public final class OwnerSkillSuppressionService {
         return payload;
     }
 
-    private static Set<ResourceLocation> controllerSkills(TemporaryStateReference reference) {
+    public static Set<ResourceLocation> controllerSkills(TransformationSession session) {
+        Objects.requireNonNull(session, "session");
+        LinkedHashSet<ResourceLocation> result = new LinkedHashSet<>();
+        suppressionReferences(session).forEach(reference -> result.addAll(controllerSkillsOfReference(reference)));
+        return Set.copyOf(result);
+    }
+
+    private static Set<ResourceLocation> controllerSkillsOfReference(TemporaryStateReference reference) {
         LinkedHashSet<ResourceLocation> result = new LinkedHashSet<>();
         ListTag tags = reference.payload().getList(CONTROLLER_SKILLS_KEY, Tag.TAG_STRING);
         for (int index = 0; index < tags.size(); index++) {
@@ -138,5 +153,9 @@ public final class OwnerSkillSuppressionService {
                 .filter(reference -> reference.kind().equals(TemporaryStateKinds.OWNER_SKILL_SUPPRESSION))
                 .filter(reference -> reference.status() == TemporaryStateStatus.PREPARED || reference.status() == TemporaryStateStatus.ACTIVE)
                 .toList();
+    }
+
+    private static boolean hasActiveSuppression(TransformationSession session) {
+        return !suppressionReferences(session).isEmpty();
     }
 }

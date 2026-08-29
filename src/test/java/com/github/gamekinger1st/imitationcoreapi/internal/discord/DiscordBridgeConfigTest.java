@@ -31,7 +31,7 @@ class DiscordBridgeConfigTest {
     void readsValidatedWebhookAndInboundBotSettings() throws IOException {
         Path path = temporaryDirectory.resolve(DiscordBridgeConfig.FILE_NAME);
         Files.writeString(path, """
-                webhook_url=https://discord.com/api/webhooks/123/token
+                webhook_url=https://discord.com/api/webhooks/example-id/example-token
                 bot_token=bot-token
                 channel_id=1234567890
                 poll_interval_seconds=999
@@ -42,7 +42,7 @@ class DiscordBridgeConfigTest {
 
         DiscordBridgeConfig config = DiscordBridgeConfig.load(path);
 
-        assertEquals("https://discord.com/api/webhooks/123/token", config.webhookUri().orElseThrow().toString());
+        assertEquals("https://discord.com/api/webhooks/example-id/example-token", config.webhookUri().orElseThrow().toString());
         assertEquals("bot-token", config.botToken().orElseThrow());
         assertEquals("1234567890", config.channelId().orElseThrow());
         assertEquals(60, config.pollIntervalSeconds());

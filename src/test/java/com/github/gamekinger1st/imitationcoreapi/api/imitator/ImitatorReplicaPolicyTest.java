@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class ImitatorReplicaPolicyTest {
     @Test
     void serializesReplicaPolicyForSessionUse() {
-        ImitatorReplicaPolicy policy = new ImitatorReplicaPolicy(1_200, 2.5D, 48D, false, true, false, true, false, true, false, "Echo ");
+        ImitatorReplicaPolicy policy = new ImitatorReplicaPolicy(1_200, 2.5D, 48D, false, true, false, true, false, true, false, "Echo ", false);
 
         ImitatorReplicaPolicy loaded = ImitatorReplicaPolicy.fromTag(policy.toTag());
 

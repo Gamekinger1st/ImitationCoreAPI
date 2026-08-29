@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ImitatorMirrorSyncPolicyTest {
     @Test
     void delegatesMirrorEligibilityToTheConfiguredTensuraPolicy() {
-        ImitatorMirrorSyncPolicy policy = new ImitatorMirrorSyncPolicy(new TensuraCopyPolicy(1D, 0.85D, true));
+        ImitatorMirrorSyncPolicy policy = new ImitatorMirrorSyncPolicy(new TensuraCopyPolicy(1D, 0.85D, true, true, false));
         TensuraVitals imitator = new TensuraVitals(100D, 50D, 50D, 20D);
 
         assertTrue(policy.tensuraCopyPolicy().evaluate(imitator, new TensuraVitals(100D, 50D, 50D, 20D), 0.85D, true).accepted());

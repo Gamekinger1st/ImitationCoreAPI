@@ -2,8 +2,12 @@ package com.github.gamekinger1st.imitationcoreapi.api.tensura;
 
 import java.util.List;
 
-public record TensuraCopyPolicy(double maximumTargetEpRatio, double minimumMirrorPrecision, boolean mirrorSyncEnabled) {
-    public static final TensuraCopyPolicy DEFAULT = new TensuraCopyPolicy(1D, 1D, false);
+public record TensuraCopyPolicy(double maximumTargetEpRatio, double minimumMirrorPrecision, boolean mirrorSyncEnabled, boolean enforceTargetEpLimit, boolean scaleCopiedStats) {
+    public static final TensuraCopyPolicy DEFAULT = new TensuraCopyPolicy(1D, 1D, false, false, false);
+
+    public TensuraCopyPolicy(double maximumTargetEpRatio, double minimumMirrorPrecision, boolean mirrorSyncEnabled) {
+        this(maximumTargetEpRatio, minimumMirrorPrecision, mirrorSyncEnabled, false, false);
+    }
 
     public TensuraCopyPolicy {
         if (!Double.isFinite(maximumTargetEpRatio) || maximumTargetEpRatio <= 0D) {
@@ -29,10 +33,10 @@ public record TensuraCopyPolicy(double maximumTargetEpRatio, double minimumMirro
         if (precision < minimumMirrorPrecision) {
             return TensuraCopyPolicyDecision.rejected("The selected form does not meet the Perfect Form precision requirement");
         }
-        if (target.ep() > imitator.ep() * maximumTargetEpRatio) {
+        if (enforceTargetEpLimit && target.ep() > imitator.ep() * maximumTargetEpRatio) {
             return TensuraCopyPolicyDecision.rejected("The target exceeds the configured EP copy limit");
         }
-        return TensuraCopyPolicyDecision.accepted(Math.min(precision, powerRatio(imitator, target)));
+        return TensuraCopyPolicyDecision.accepted(scaleCopiedStats ? Math.min(precision, powerRatio(imitator, target)) : 1D);
     }
 
     public double powerRatio(TensuraVitals imitator, TensuraVitals target) {

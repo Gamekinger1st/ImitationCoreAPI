@@ -118,6 +118,13 @@ class GeckoDisguiseAnimationAdapterTest {
     }
 
     @Test
+    void retainsOneShotAnimationsBeforeReturningToMovement() {
+        assertTrue(GeckoDisguiseAnimationAdapter.shouldRetainOneShot("attack", "walk", 24, 10));
+        assertTrue(!GeckoDisguiseAnimationAdapter.shouldRetainOneShot("attack", "hurt", 24, 10));
+        assertTrue(!GeckoDisguiseAnimationAdapter.shouldRetainOneShot("attack", "walk", 9, 10));
+    }
+
+    @Test
     void mapsCrouchUseSprintAndIdleIntentToRecordedTriggersInPriorityOrder() {
         GeckoControllerSnapshot controller = new GeckoControllerSnapshot(
                 "main",

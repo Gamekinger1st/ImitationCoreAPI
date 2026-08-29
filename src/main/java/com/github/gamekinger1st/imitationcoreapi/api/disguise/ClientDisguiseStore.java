@@ -7,6 +7,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class ClientDisguiseStore implements ClientDisguiseStateListener {
+    public static final int MAX_ACTIVE_DISGUISES = 2_048;
     private final Map<Integer, ClientDisguiseState> states = new ConcurrentHashMap<>();
 
     public Optional<ClientDisguiseState> get(int entityId) {
@@ -31,6 +32,13 @@ public final class ClientDisguiseStore implements ClientDisguiseStateListener {
                 || !current.ownerId().equals(state.ownerId())
                 || !current.sessionId().equals(state.sessionId())
                 || state.revision() >= current.revision() ? state : current);
+        while (states.size() > MAX_ACTIVE_DISGUISES) {
+            Integer oldest = states.keySet().stream().min(Integer::compareTo).orElse(null);
+            if (oldest == null) {
+                break;
+            }
+            states.remove(oldest);
+        }
     }
 
     @Override

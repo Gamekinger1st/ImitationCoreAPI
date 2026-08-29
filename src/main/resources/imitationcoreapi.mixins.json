@@ -1,21 +1,16 @@
 {
-  "required": false,
+  "required": true,
   "package": "com.github.gamekinger1st.imitationcoreapi.internal.mixin",
   "compatibilityLevel": "JAVA_21",
   "refmap": "imitationcoreapi.refmap.json",
-  "plugin": "com.github.gamekinger1st.imitationcoreapi.internal.mixin.ImitationCoreMixinPlugin",
   "mixins": [
-    "MixinManasSkillInstance",
-    "MixinManasRaceLines",
-    "MixinMobTargeting",
-    "MixinTensuraAnimalPreyTargeting",
-    "MixinTensuraSubordinateTargeting",
-    "MixinTensuraRaceStats"
+    "MixinMobTargeting"
   ],
   "client": [
+    "MixinChatScreenDraft",
     "MixinEntityEyeHeight",
-    "MixinMinecraftChatRestrictions",
-    "MixinTensuraOverlayHandler"
+    "MixinLocalPlayerAutoJump",
+    "MixinMinecraftChatRestrictions"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -22,6 +22,7 @@ public final class TemporarySkillService {
     public static final String SKILL_ID_KEY = "skill_id";
     public static final String SESSION_KEY = "imitationcoreapi_session";
     public static final String REFERENCE_KEY = "imitationcoreapi_reference";
+    public static final String REPLACED_SKILL_KEY = "replaced_skill";
     private final TransformationService transformations;
 
     public TemporarySkillService(TransformationService transformations) {
@@ -65,6 +66,10 @@ public final class TemporarySkillService {
         payload.putString(BRIDGE_ID_KEY, bridgeId.get().toString());
         payload.putString(SKILL_ID_KEY, skillId.toString());
         payload.putInt("remove_time", removeTime);
+        Optional<SkillState> replaced = ImitationApi.skillBridges().capture(owner)
+                .filter(snapshot -> snapshot.bridgeId().equals(bridgeId.get()))
+                .flatMap(snapshot -> snapshot.skills().stream().filter(state -> state.skillId().equals(skillId)).findFirst());
+        replaced.ifPresent(state -> payload.put(REPLACED_SKILL_KEY, SkillSnapshotSerialization.toTag(new SkillSnapshot(bridgeId.get(), 1, java.util.List.of(state)))));
         TemporaryStateReference reference = new TemporaryStateReference(
                 referenceId,
                 sessionId,
@@ -78,22 +83,56 @@ public final class TemporarySkillService {
         if (!added.accepted()) {
             return TemporarySkillGrantResult.failure(added.message());
         }
+        if (replaced.isPresent()) {
+            SkillOperationResult removed = ImitationApi.skillBridges().removeSkill(owner, bridgeId.get(), skillId);
+            if (!removed.successful()) {
+                transformations.updateTemporaryState(sessionId, referenceId, TemporaryStateStatus.CLEANED, gameTime);
+                return TemporarySkillGrantResult.failure("The original skill could not be isolated: " + removed.detail());
+            }
+        }
         SkillOperationResult granted = ImitationApi.skillBridges().grantTemporary(owner, bridgeId.get(), skillId, removeTime, new TemporarySkillOwnership(sessionId, referenceId));
         if (!granted.successful()) {
+            replaced.ifPresent(state -> ImitationApi.skillBridges().restoreSkill(owner, bridgeId.get(), state));
             transformations.updateTemporaryState(sessionId, referenceId, TemporaryStateStatus.CLEANED, gameTime);
             return TemporarySkillGrantResult.failure(granted.detail());
         }
         if (mastery.isPresent()) {
             SkillOperationResult configured = ImitationApi.skillBridges().update(owner, bridgeId.get(), new SkillUpdateRequest(skillId, mastery, Optional.of(false), Optional.empty(), Optional.empty()));
             if (!configured.successful()) {
-                SkillOperationResult revoked = ImitationApi.skillBridges().revokeTemporary(owner, bridgeId.get(), skillId, new TemporarySkillOwnership(sessionId, referenceId));
-                if (revoked.successful()) {
-                    transformations.updateTemporaryState(sessionId, referenceId, TemporaryStateStatus.CLEANED, gameTime);
-                }
-                return TemporarySkillGrantResult.failure("The temporary skill could not be configured: " + configured.detail());
+                return rollback(owner, bridgeId.get(), skillId, sessionId, referenceId, gameTime, "The temporary skill could not be configured: " + configured.detail());
             }
         }
         SessionTransitionResult activated = transformations.updateTemporaryState(sessionId, referenceId, TemporaryStateStatus.ACTIVE, gameTime);
-        return activated.accepted() ? TemporarySkillGrantResult.success(referenceId) : TemporarySkillGrantResult.failure(activated.message());
+        return activated.accepted()
+                ? TemporarySkillGrantResult.success(referenceId)
+                : rollback(owner, bridgeId.get(), skillId, sessionId, referenceId, gameTime, "The temporary skill could not be activated: " + activated.message());
+    }
+
+    private TemporarySkillGrantResult rollback(LivingEntity owner, ResourceLocation bridgeId, ResourceLocation skillId, UUID sessionId, UUID referenceId, long gameTime, String failure) {
+        SkillOperationResult revoked = ImitationApi.skillBridges().revokeTemporary(owner, bridgeId, skillId, new TemporarySkillOwnership(sessionId, referenceId));
+        if (!revoked.successful()) {
+            return TemporarySkillGrantResult.failure(failure + "; cleanup failed: " + revoked.detail());
+        }
+        transformations.session(sessionId).flatMap(session -> session.temporaryState().stream()
+                        .filter(reference -> reference.referenceId().equals(referenceId))
+                        .findFirst())
+                .flatMap(TemporarySkillService::replacedSkill)
+                .ifPresent(state -> ImitationApi.skillBridges().restoreSkill(owner, bridgeId, state));
+        SessionTransitionResult cleaned = transformations.updateTemporaryState(sessionId, referenceId, TemporaryStateStatus.CLEANED, gameTime);
+        return cleaned.accepted()
+                ? TemporarySkillGrantResult.failure(failure)
+                : TemporarySkillGrantResult.failure(failure + "; cleanup state could not be recorded: " + cleaned.message());
+    }
+
+    public static Optional<SkillState> replacedSkill(TemporaryStateReference reference) {
+        CompoundTag payload = reference.payload();
+        if (!payload.contains(REPLACED_SKILL_KEY, net.minecraft.nbt.Tag.TAG_COMPOUND)) {
+            return Optional.empty();
+        }
+        try {
+            return SkillSnapshotSerialization.fromTag(payload.getCompound(REPLACED_SKILL_KEY)).skills().stream().findFirst();
+        } catch (RuntimeException exception) {
+            return Optional.empty();
+        }
     }
 }

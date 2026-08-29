@@ -19,6 +19,7 @@ public final class ImitatorSkillDefinitionBuilder {
     private ImitatorReplicaPolicy replicaPolicy = ImitatorReplicaPolicy.DEFAULT;
     private ImitatorTransformDurationPolicy transformDurationPolicy = ImitatorTransformDurationPolicy.unlimited();
     private ImitatorFormLibraryLimits formLibraryLimits = ImitatorFormLibraryLimits.DEFAULT;
+    private ImitatorTransformationModifiers transformationModifiers = ImitatorTransformationModifiers.DEFAULT;
 
     public ImitatorSkillDefinitionBuilder(ResourceLocation skillId, String displayName, String description) {
         this.skillId = Objects.requireNonNull(skillId, "skillId");
@@ -43,6 +44,7 @@ public final class ImitatorSkillDefinitionBuilder {
         builder.replicaPolicy(definition.replicaPolicy());
         builder.transformDurationPolicy(definition.transformDurationPolicy());
         builder.formLibraryLimits(definition.formLibraryLimits());
+        builder.transformationModifiers(definition.transformationModifiers());
         return builder;
     }
 
@@ -135,6 +137,19 @@ public final class ImitatorSkillDefinitionBuilder {
         return this;
     }
 
+    public ImitatorSkillDefinitionBuilder transformationModifiers(ImitatorTransformationModifiers transformationModifiers) {
+        this.transformationModifiers = Objects.requireNonNull(transformationModifiers, "transformationModifiers");
+        return this;
+    }
+
+    public ImitatorSkillDefinitionBuilder autoJumpOverride(ImitatorAutoJumpOverride autoJumpOverride) {
+        return transformationModifiers(new ImitatorTransformationModifiers(autoJumpOverride));
+    }
+
+    public ImitatorSkillDefinitionBuilder forceAutoJump(boolean enabled) {
+        return transformationModifiers(ImitatorTransformationModifiers.forceAutoJump(enabled));
+    }
+
     public ImitatorSkillDefinition build() {
         return new ImitatorSkillDefinition(
                 skillId,
@@ -149,7 +164,8 @@ public final class ImitatorSkillDefinitionBuilder {
                 skillCopyPolicy,
                 replicaPolicy,
                 transformDurationPolicy,
-                formLibraryLimits
+                formLibraryLimits,
+                transformationModifiers
         );
     }
 }

@@ -14,6 +14,8 @@ public record TemporaryStateReference(
         CompoundTag payload,
         TemporaryStateStatus status
 ) {
+    public static final int MAX_PAYLOAD_BYTES = 262_144;
+
     public TemporaryStateReference {
         Objects.requireNonNull(referenceId, "referenceId");
         Objects.requireNonNull(sessionId, "sessionId");
@@ -21,6 +23,9 @@ public record TemporaryStateReference(
         Objects.requireNonNull(kind, "kind");
         Objects.requireNonNull(payload, "payload");
         Objects.requireNonNull(status, "status");
+        if (payload.sizeInBytes() > MAX_PAYLOAD_BYTES) {
+            throw new IllegalArgumentException("Temporary state payload exceeds the configured limit");
+        }
         payload = payload.copy();
     }
 

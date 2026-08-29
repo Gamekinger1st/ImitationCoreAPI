@@ -1,5 +1,6 @@
 package com.github.gamekinger1st.imitationcoreapi.api.chat;
 
+import com.github.gamekinger1st.imitationcoreapi.ImitationCoreApi;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -24,9 +25,13 @@ public final class PersonaChatRegistry {
         Objects.requireNonNull(sender, "sender");
         Objects.requireNonNull(rawText, "rawText");
         for (PersonaChatProvider provider : orderedProviders()) {
-            PersonaChatDecision decision = Objects.requireNonNull(provider.resolve(sender, rawText), "persona chat decision");
-            if (decision.disposition() != PersonaChatDisposition.PASSTHROUGH) {
-                return decision;
+            try {
+                PersonaChatDecision decision = Objects.requireNonNull(provider.resolve(sender, rawText), "persona chat decision");
+                if (decision.disposition() != PersonaChatDisposition.PASSTHROUGH) {
+                    return decision;
+                }
+            } catch (RuntimeException | LinkageError exception) {
+                ImitationCoreApi.LOGGER.error("Persona chat provider {} failed", provider.id(), exception);
             }
         }
         return PersonaChatDecision.passthrough();

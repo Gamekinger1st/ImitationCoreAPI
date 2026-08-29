@@ -1,5 +1,6 @@
 package com.github.gamekinger1st.imitationcoreapi.api.imitator;
 
+import com.github.gamekinger1st.imitationcoreapi.ImitationCoreApi;
 import com.github.gamekinger1st.imitationcoreapi.api.chat.PersonaIdentity;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -24,11 +25,33 @@ public final class ImitatorIntegrationRegistry {
     }
 
     public Optional<UUID> activeSession(ServerPlayer player) {
-        return orderedIntegrations().stream().map(integration -> integration.activeSession(player)).flatMap(Optional::stream).findFirst();
+        Objects.requireNonNull(player, "player");
+        for (ImitatorIntegration integration : orderedIntegrations()) {
+            try {
+                Optional<UUID> session = Objects.requireNonNull(integration.activeSession(player), "active session");
+                if (session.isPresent()) {
+                    return session;
+                }
+            } catch (RuntimeException | LinkageError exception) {
+                ImitationCoreApi.LOGGER.error("Imitator integration {} failed to resolve an active session", integration.id(), exception);
+            }
+        }
+        return Optional.empty();
     }
 
     public Optional<PersonaIdentity> activePersona(ServerPlayer player) {
-        return orderedIntegrations().stream().map(integration -> integration.activePersona(player)).flatMap(Optional::stream).findFirst();
+        Objects.requireNonNull(player, "player");
+        for (ImitatorIntegration integration : orderedIntegrations()) {
+            try {
+                Optional<PersonaIdentity> persona = Objects.requireNonNull(integration.activePersona(player), "active persona");
+                if (persona.isPresent()) {
+                    return persona;
+                }
+            } catch (RuntimeException | LinkageError exception) {
+                ImitationCoreApi.LOGGER.error("Imitator integration {} failed to resolve an active persona", integration.id(), exception);
+            }
+        }
+        return Optional.empty();
     }
 
     private synchronized java.util.List<ImitatorIntegration> orderedIntegrations() {

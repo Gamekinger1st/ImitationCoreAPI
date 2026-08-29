@@ -8,6 +8,7 @@ import com.github.gamekinger1st.imitationcoreapi.api.imitator.ImitatorAction;
 import com.github.gamekinger1st.imitationcoreapi.api.imitator.ImitatorActionResult;
 import com.github.gamekinger1st.imitationcoreapi.api.imitator.ImitatorHandlerService;
 import com.github.gamekinger1st.imitationcoreapi.api.network.CommitImitatorRecordPayload;
+import com.github.gamekinger1st.imitationcoreapi.api.network.ActivateFormAbilityPayload;
 import com.github.gamekinger1st.imitationcoreapi.api.network.ActiveDisguisePayload;
 import com.github.gamekinger1st.imitationcoreapi.api.network.ClearDisguisePayload;
 import com.github.gamekinger1st.imitationcoreapi.api.network.ImitatorActionFeedbackPayload;
@@ -19,9 +20,12 @@ import com.github.gamekinger1st.imitationcoreapi.api.network.ChatEnvelopePayload
 import com.github.gamekinger1st.imitationcoreapi.api.network.ChatProtocolHelloPayload;
 import com.github.gamekinger1st.imitationcoreapi.api.network.ChatProtocolPayload;
 import com.github.gamekinger1st.imitationcoreapi.api.network.SendCoreChatPayload;
+import com.github.gamekinger1st.imitationcoreapi.api.network.SelectChatChannelPayload;
 import com.github.gamekinger1st.imitationcoreapi.api.network.RequestImitatorFormLibraryPayload;
 import com.github.gamekinger1st.imitationcoreapi.api.network.SelectImitatorFormPayload;
 import com.github.gamekinger1st.imitationcoreapi.api.network.SessionStatePayload;
+import com.github.gamekinger1st.imitationcoreapi.api.network.ReplicaVisualStatePayload;
+import com.github.gamekinger1st.imitationcoreapi.api.replica.ReplicaEntityTags;
 import com.github.gamekinger1st.imitationcoreapi.api.service.ImitationCoreServices;
 import com.github.gamekinger1st.imitationcoreapi.api.service.TransformationService;
 import com.github.gamekinger1st.imitationcoreapi.api.session.TransformationLifecycleReason;
@@ -32,10 +36,12 @@ import com.github.gamekinger1st.imitationcoreapi.api.chat.ChatEnvelope;
 import com.github.gamekinger1st.imitationcoreapi.api.chat.ChatMessageSource;
 import com.github.gamekinger1st.imitationcoreapi.api.chat.ClientChatStore;
 import com.github.gamekinger1st.imitationcoreapi.internal.chat.ChatClientCapabilities;
+import com.github.gamekinger1st.imitationcoreapi.api.chat.ChatRateLimiter;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.ChatFormatting;
+import net.minecraft.world.entity.Entity;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
@@ -45,17 +51,19 @@ import java.util.Optional;
 import java.util.Collection;
 
 public final class ImitationCoreNetwork {
-    private static final String PROTOCOL_VERSION = "11";
+    private static final String PROTOCOL_VERSION = "13";
+    private static final ChatRateLimiter ACTION_RATE_LIMITER = new ChatRateLimiter(30, 1_000L);
 
     private ImitationCoreNetwork() {
     }
 
     public static void register(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(ImitationCoreApi.MOD_ID).versioned(PROTOCOL_VERSION);
+        PayloadRegistrar registrar = event.registrar(ImitationCoreApi.MOD_ID).versioned(PROTOCOL_VERSION).optional();
         registrar.playToServer(RequestImitatorFormLibraryPayload.TYPE, RequestImitatorFormLibraryPayload.STREAM_CODEC, ImitationCoreNetwork::handleFormLibraryRequest);
         registrar.playToServer(CommitImitatorRecordPayload.TYPE, CommitImitatorRecordPayload.STREAM_CODEC, ImitationCoreNetwork::handleRecordCommit);
         registrar.playToServer(SelectImitatorFormPayload.TYPE, SelectImitatorFormPayload.STREAM_CODEC, ImitationCoreNetwork::handleFormSelection);
         registrar.playToServer(RequestSessionRevertPayload.TYPE, RequestSessionRevertPayload.STREAM_CODEC, ImitationCoreNetwork::handleRevertRequest);
+        registrar.playToServer(ActivateFormAbilityPayload.TYPE, ActivateFormAbilityPayload.STREAM_CODEC, ImitationCoreNetwork::handleFormAbility);
         registrar.playToClient(ActiveDisguisePayload.TYPE, ActiveDisguisePayload.STREAM_CODEC, ImitationCoreNetwork::handleActiveDisguise);
         registrar.playToClient(ClearDisguisePayload.TYPE, ClearDisguisePayload.STREAM_CODEC, ImitationCoreNetwork::handleClearDisguise);
         registrar.playToClient(ImitatorFormLibraryPayload.TYPE, ImitatorFormLibraryPayload.STREAM_CODEC, ImitationCoreNetwork::handleFormLibrary);
@@ -63,19 +71,26 @@ public final class ImitationCoreNetwork {
         registrar.playToClient(OpenImitatorMenuPayload.TYPE, OpenImitatorMenuPayload.STREAM_CODEC, ImitationCoreNetwork::handleOpenImitatorMenu);
         registrar.playToClient(SessionStatePayload.TYPE, SessionStatePayload.STREAM_CODEC, ImitationCoreNetwork::handleSessionState);
         registrar.playToClient(PersonaChatPayload.TYPE, PersonaChatPayload.STREAM_CODEC, ImitationCoreNetwork::handlePersonaChat);
-        PayloadRegistrar chatRegistrar = event.registrar(ImitationCoreApi.MOD_ID).versioned("1").optional();
+        registrar.playToClient(ReplicaVisualStatePayload.TYPE, ReplicaVisualStatePayload.STREAM_CODEC, ImitationCoreNetwork::handleReplicaVisualState);
+        PayloadRegistrar chatRegistrar = event.registrar(ImitationCoreApi.MOD_ID).versioned("2").optional();
         chatRegistrar.playToServer(ChatProtocolHelloPayload.TYPE, ChatProtocolHelloPayload.STREAM_CODEC, ImitationCoreNetwork::handleChatProtocolHello);
         chatRegistrar.playToServer(SendCoreChatPayload.TYPE, SendCoreChatPayload.STREAM_CODEC, ImitationCoreNetwork::handleCoreChat);
+        chatRegistrar.playToServer(SelectChatChannelPayload.TYPE, SelectChatChannelPayload.STREAM_CODEC, ImitationCoreNetwork::handleChatChannelSelection);
         chatRegistrar.playToClient(ChatProtocolPayload.TYPE, ChatProtocolPayload.STREAM_CODEC, ImitationCoreNetwork::handleChatProtocol);
         chatRegistrar.playToClient(ChatEnvelopePayload.TYPE, ChatEnvelopePayload.STREAM_CODEC, ImitationCoreNetwork::handleChatEnvelope);
     }
 
     public static void advertiseChat(ServerPlayer player) {
-        PacketDistributor.sendToPlayer(player, new ChatProtocolPayload(ChatProtocolPayload.CURRENT_PROTOCOL_VERSION, ClientChatStore.MAX_HISTORY_SIZE));
+        PacketDistributor.sendToPlayer(player, new ChatProtocolPayload(
+                ChatProtocolPayload.CURRENT_PROTOCOL_VERSION,
+                ClientChatStore.MAX_HISTORY_SIZE,
+                ImitationCoreServices.chats(player).activeChannel(player)
+        ));
     }
 
     public static void forgetChatClient(ServerPlayer player) {
         ChatClientCapabilities.clear(player.getUUID());
+        ACTION_RATE_LIMITER.clear(player.getUUID());
     }
 
     public static void deliverChat(Collection<ServerPlayer> recipients, ChatEnvelope envelope) {
@@ -119,6 +134,14 @@ public final class ImitationCoreNetwork {
         PacketDistributor.sendToPlayer(player, ImitatorFormLibraryPayload.from(ImitationCoreServices.imitatorHandlers(player).formsFor(player), transformations::snapshot));
     }
 
+    public static void syncReplicaVisuals(Entity replica) {
+        PacketDistributor.sendToPlayersTrackingEntity(replica, replicaVisualPayload(replica));
+    }
+
+    public static void syncReplicaVisuals(ServerPlayer tracker, Entity replica) {
+        PacketDistributor.sendToPlayer(tracker, replicaVisualPayload(replica));
+    }
+
     public static void openImitatorMenu(ServerPlayer player, ImitatorMenuRequest request) {
         if (request != ImitatorMenuRequest.NONE) {
             PacketDistributor.sendToPlayer(player, new OpenImitatorMenuPayload(request));
@@ -126,11 +149,15 @@ public final class ImitationCoreNetwork {
     }
 
     private static void handleFormLibraryRequest(RequestImitatorFormLibraryPayload payload, IPayloadContext context) {
-        context.enqueueWork(() -> serverPlayer(context).ifPresent(ImitationCoreNetwork::syncFormLibrary));
+        context.enqueueWork(() -> serverPlayer(context).filter(ImitationCoreNetwork::allowAction).ifPresent(ImitationCoreNetwork::syncFormLibrary));
     }
 
     private static void handleRecordCommit(CommitImitatorRecordPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> serverPlayer(context).ifPresent(player -> {
+            if (!allowAction(player)) {
+                publishAction(player, ImitatorAction.COMMIT_RECORD, false, "Imitator menu actions are being sent too quickly");
+                return;
+            }
             ImitatorActionResult result = ImitationCoreServices.imitatorSkills(player).commitRecord(player, payload.slot());
             publishAction(player, ImitatorAction.COMMIT_RECORD, result);
         }));
@@ -138,14 +165,27 @@ public final class ImitationCoreNetwork {
 
     private static void handleFormSelection(SelectImitatorFormPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> serverPlayer(context).ifPresent(player -> {
-            ImitatorActionResult result = ImitationCoreServices.imitatorSkills(player).selectForm(player, payload.slot());
+            if (!allowAction(player)) {
+                publishAction(player, ImitatorAction.SELECT_FORM, false, "Imitator menu actions are being sent too quickly");
+                return;
+            }
+            var controller = ImitationCoreServices.imitatorSkills(player);
+            ImitatorActionResult result = controller.selectForm(player, payload.slot());
             publishAction(player, ImitatorAction.SELECT_FORM, result);
+            if (result.accepted()) {
+                ImitationApi.imitatorMenuContinuations().resume(player, controller.mode(player), payload.slot())
+                        .ifPresent(message -> publishAction(player, ImitatorAction.BEGIN_TRANSFORM, false, message));
+            }
         }));
     }
 
     private static void handleRevertRequest(RequestSessionRevertPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (!(context.player() instanceof ServerPlayer player) || !(player.level() instanceof ServerLevel level)) {
+                return;
+            }
+            if (!allowAction(player)) {
+                publishAction(player, ImitatorAction.REVERT, false, "Imitator menu actions are being sent too quickly");
                 return;
             }
             TransformationService service = ImitationCoreServices.forServer(level.getServer());
@@ -166,16 +206,43 @@ public final class ImitationCoreNetwork {
         });
     }
 
+    private static void handleFormAbility(ActivateFormAbilityPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> serverPlayer(context).ifPresent(player -> {
+            if (!allowAction(player)) {
+                publishAction(player, ImitatorAction.ACTIVATE_FORM_ABILITY, false, "Copied form abilities are being activated too quickly");
+                return;
+            }
+            ImitatorActionResult result = ImitationCoreServices.imitatorHandlers(player).activateFormAbility(player);
+            publishAction(player, ImitatorAction.ACTIVATE_FORM_ABILITY, result.accepted(), result.message());
+        }));
+    }
+
     private static void handleFormLibrary(ImitatorFormLibraryPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> ImitationApi.imitatorFormLibraries().post(payload));
     }
 
     private static void handleActiveDisguise(ActiveDisguisePayload payload, IPayloadContext context) {
-        context.enqueueWork(() -> ImitationApi.clientDisguiseStates().postActivated(payload.toState()));
+        context.enqueueWork(() -> {
+            ImitationApi.clientDisguiseStates().postActivated(payload.toState());
+            Entity entity = context.player().level().getEntity(payload.entityId());
+            if (entity != null) {
+                entity.refreshDimensions();
+            }
+        });
+    }
+
+    private static void handleReplicaVisualState(ReplicaVisualStatePayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> ImitationApi.clientReplicaVisuals().put(payload.entityId(), payload.equipment()));
     }
 
     private static void handleClearDisguise(ClearDisguisePayload payload, IPayloadContext context) {
-        context.enqueueWork(() -> ImitationApi.clientDisguiseStates().postCleared(payload.entityId(), payload.ownerId()));
+        context.enqueueWork(() -> {
+            ImitationApi.clientDisguiseStates().postCleared(payload.entityId(), payload.ownerId());
+            Entity entity = context.player().level().getEntity(payload.entityId());
+            if (entity != null) {
+                entity.refreshDimensions();
+            }
+        });
     }
 
     private static void handleActionFeedback(ImitatorActionFeedbackPayload payload, IPayloadContext context) {
@@ -213,6 +280,22 @@ public final class ImitationCoreNetwork {
         }));
     }
 
+    private static void handleChatChannelSelection(SelectChatChannelPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> serverPlayer(context).ifPresent(player -> {
+            if (!allowAction(player)) {
+                player.sendSystemMessage(Component.literal("Chat channel changes are being sent too quickly").withStyle(ChatFormatting.RED));
+                return;
+            }
+            var result = ImitationCoreServices.chats(player).selectChannel(player, payload.channelId());
+            if (!result.accepted()) {
+                player.sendSystemMessage(Component.literal(result.message()).withStyle(ChatFormatting.RED));
+                return;
+            }
+            advertiseChat(player);
+            player.sendSystemMessage(Component.literal(result.message()).withStyle(ChatFormatting.GRAY));
+        }));
+    }
+
     private static void handleChatProtocol(ChatProtocolPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> {
             ImitationApi.clientChatProtocol().accept(payload);
@@ -240,6 +323,10 @@ public final class ImitationCoreNetwork {
         return context.player() instanceof ServerPlayer player && player.level() instanceof ServerLevel ? Optional.of(player) : Optional.empty();
     }
 
+    private static boolean allowAction(ServerPlayer player) {
+        return ACTION_RATE_LIMITER.tryAcquire(player.getUUID(), System.currentTimeMillis());
+    }
+
     private static void publishAction(ServerPlayer player, ImitatorAction action, ImitatorActionResult result) {
         publishAction(player, action, result.accepted(), result.message());
         syncFormLibrary(player);
@@ -262,5 +349,12 @@ public final class ImitationCoreNetwork {
         return ImitationCoreServices.forServer(subject.serverLevel().getServer())
                 .snapshot(session.snapshotId())
                 .map(snapshot -> ActiveDisguisePayload.from(subject.getId(), session, snapshot));
+    }
+
+    private static ReplicaVisualStatePayload replicaVisualPayload(Entity replica) {
+        if (!ReplicaEntityTags.isReplica(replica)) {
+            throw new IllegalArgumentException("The entity is not an Imitation Core replica");
+        }
+        return new ReplicaVisualStatePayload(replica.getId(), ReplicaEntityTags.visualEquipment(replica));
     }
 }

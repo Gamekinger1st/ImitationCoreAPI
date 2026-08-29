@@ -98,6 +98,9 @@ public final class SessionSerialization {
         Optional<String> failure = tag.contains("failure", Tag.TAG_STRING) ? Optional.of(tag.getString("failure")) : Optional.empty();
         List<TemporaryStateReference> temporaryState = new ArrayList<>();
         ListTag temporaryTags = tag.getList("temporary_state", Tag.TAG_COMPOUND);
+        if (temporaryTags.size() > TransformationSession.MAX_TEMPORARY_STATE_REFERENCES) {
+            throw new IllegalArgumentException("Transformation session has too many temporary state references");
+        }
         for (int index = 0; index < temporaryTags.size(); index++) {
             temporaryState.add(temporaryStateFromTag(temporaryTags.getCompound(index)));
         }
@@ -125,6 +128,9 @@ public final class SessionSerialization {
         CompatibilityLevel level = requireEnum(tag, "level", CompatibilityLevel.class);
         List<String> reasons = new ArrayList<>();
         ListTag reasonTags = tag.getList("reasons", Tag.TAG_COMPOUND);
+        if (reasonTags.size() > CompatibilityAssessment.MAX_REASONS) {
+            throw new IllegalArgumentException("Transformation compatibility has too many reasons");
+        }
         for (int index = 0; index < reasonTags.size(); index++) {
             reasons.add(reasonTags.getCompound(index).getString("value"));
         }

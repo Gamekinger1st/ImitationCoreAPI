@@ -1,5 +1,6 @@
 package com.github.gamekinger1st.imitationcoreapi.api.skill;
 
+import com.github.gamekinger1st.imitationcoreapi.ImitationCoreApi;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.Comparator;
@@ -55,6 +56,7 @@ public final class SkillClassificationOverrideRegistry {
                     return Objects.requireNonNull(classification.get(), "classification");
                 }
             } catch (RuntimeException | LinkageError exception) {
+                ImitationCoreApi.LOGGER.error("Skill classification provider {} failed", provider.id(), exception);
             }
         }
         return original;

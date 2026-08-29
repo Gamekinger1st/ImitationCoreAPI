@@ -1,5 +1,7 @@
 package com.github.gamekinger1st.imitationcoreapi.api.disguise;
 
+import com.github.gamekinger1st.imitationcoreapi.ImitationCoreApi;
+
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -17,14 +19,22 @@ public final class ClientDisguiseStateBus {
     public void postActivated(ClientDisguiseState state) {
         Objects.requireNonNull(state, "state");
         for (ClientDisguiseStateListener listener : listeners) {
-            listener.onDisguiseActivated(state);
+            try {
+                listener.onDisguiseActivated(state);
+            } catch (RuntimeException | LinkageError exception) {
+                ImitationCoreApi.LOGGER.error("An imitation disguise activation listener failed", exception);
+            }
         }
     }
 
     public void postCleared(int entityId, UUID ownerId) {
         Objects.requireNonNull(ownerId, "ownerId");
         for (ClientDisguiseStateListener listener : listeners) {
-            listener.onDisguiseCleared(entityId, ownerId);
+            try {
+                listener.onDisguiseCleared(entityId, ownerId);
+            } catch (RuntimeException | LinkageError exception) {
+                ImitationCoreApi.LOGGER.error("An imitation disguise cleanup listener failed", exception);
+            }
         }
     }
 }

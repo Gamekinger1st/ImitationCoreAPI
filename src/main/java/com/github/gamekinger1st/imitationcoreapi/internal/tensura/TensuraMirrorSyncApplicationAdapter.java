@@ -11,6 +11,8 @@ import com.github.gamekinger1st.imitationcoreapi.api.session.TemporaryStateRefer
 import com.github.gamekinger1st.imitationcoreapi.api.tensura.TensuraStateExtensions;
 import com.github.gamekinger1st.imitationcoreapi.api.tensura.TensuraStateOperationResult;
 import com.github.gamekinger1st.imitationcoreapi.api.tensura.TensuraStateSnapshot;
+import com.github.gamekinger1st.imitationcoreapi.api.imitator.ImitatorHandlerService;
+import com.github.gamekinger1st.imitationcoreapi.internal.physical.PhysicalFormApplicationAdapter;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 
@@ -32,6 +34,9 @@ public final class TensuraMirrorSyncApplicationAdapter implements Transformation
 
     @Override
     public Optional<String> validate(TransformationApplicationContext context) {
+        if (!perfectForm(context)) {
+            return Optional.empty();
+        }
         Optional<TensuraStateSnapshot> target = TensuraStateExtensions.find(context.snapshot().extensions());
         if (target.isEmpty()) {
             return Optional.empty();
@@ -43,13 +48,16 @@ public final class TensuraMirrorSyncApplicationAdapter implements Transformation
 
     @Override
     public List<TemporaryStateDefinition> prepare(TransformationApplicationContext context) {
+        if (!perfectForm(context)) {
+            return List.of();
+        }
         Optional<TensuraStateSnapshot> target = TensuraStateExtensions.find(context.snapshot().extensions());
         if (target.isEmpty()) {
             return List.of();
         }
         CompoundTag payload = new CompoundTag();
         payload.putString("bridge", target.get().bridgeId().toString());
-        payload.putDouble("scale", context.session().gameplayScale());
+        payload.putDouble("scale", perfectFormScale(context));
         return List.of(new TemporaryStateDefinition(TemporaryStateKinds.STAT, payload));
     }
 
@@ -60,10 +68,23 @@ public final class TensuraMirrorSyncApplicationAdapter implements Transformation
         }
         TensuraStateSnapshot target = TensuraStateExtensions.find(context.snapshot().extensions())
                 .orElseThrow(() -> new IllegalStateException("Perfect Form target state is unavailable"));
-        TensuraStateOperationResult result = ImitationApi.tensuraStates().restoreScaled(context.owner(), target, context.session().gameplayScale());
+        TensuraStateOperationResult result = ImitationApi.tensuraStates().restoreScaled(context.owner(), target, perfectFormScale(context));
         if (!result.successful()) {
             throw new IllegalStateException(result.detail());
         }
+        if (context.snapshot().entityType().equals(net.minecraft.resources.ResourceLocation.withDefaultNamespace("player"))) {
+            PhysicalFormApplicationAdapter.reapplyCopiedHealth(context.owner(), context.snapshot().visualData(), perfectFormScale(context));
+        } else {
+            PhysicalFormApplicationAdapter.reapplyMobLocomotion(context.owner(), context.snapshot().visualData(), perfectFormScale(context));
+        }
+    }
+
+    private static boolean perfectForm(TransformationApplicationContext context) {
+        return context.session().baseline().playerData().getBoolean(ImitatorHandlerService.PERFECT_FORM_BASELINE_KEY);
+    }
+
+    private static double perfectFormScale(TransformationApplicationContext context) {
+        return context.session().baseline().playerData().getDouble(ImitatorHandlerService.PERFECT_FORM_SCALE_BASELINE_KEY);
     }
 
     @Override

@@ -62,6 +62,16 @@ public final class TemporarySkillCleanupAdapter implements TransformationApplica
             if (!result.successful()) {
                 throw new IllegalStateException(result.detail());
             }
+            Optional<com.github.gamekinger1st.imitationcoreapi.api.skill.SkillState> replaced = TemporarySkillService.replacedSkill(reference);
+            if (replaced.isPresent()) {
+                if (bridgeId == null) {
+                    throw new IllegalStateException("Temporary skill replacement is missing its bridge id");
+                }
+                SkillOperationResult restored = ImitationApi.skillBridges().restoreSkill(owner, bridgeId, replaced.get());
+                if (!restored.successful()) {
+                    throw new IllegalStateException(restored.detail());
+                }
+            }
         }
     }
 }

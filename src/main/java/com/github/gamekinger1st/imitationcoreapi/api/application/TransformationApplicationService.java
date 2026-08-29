@@ -65,7 +65,7 @@ public final class TransformationApplicationService {
                 if (rejection.isPresent()) {
                     return failAndRevert(owner, sessionId, TransformationState.VALIDATING, boundedMessage(rejection.get()), gameTime);
                 }
-            } catch (RuntimeException exception) {
+            } catch (RuntimeException | LinkageError exception) {
                 return failAndRevert(owner, sessionId, TransformationState.VALIDATING, adapter.id() + " validation failed: " + message(exception), gameTime);
             }
         }
@@ -80,12 +80,13 @@ public final class TransformationApplicationService {
             List<TemporaryStateReference> references;
             try {
                 references = registerPreparedState(sessionId, adapter, applicationContext, gameTime);
-            } catch (RuntimeException exception) {
+            } catch (RuntimeException | LinkageError exception) {
                 return failAndRevert(owner, sessionId, TransformationState.APPLYING, adapter.id() + " preparation failed: " + message(exception), gameTime);
             }
             try {
-                adapter.apply(applicationContext, List.copyOf(references));
-            } catch (RuntimeException exception) {
+                TransformationSession prepared = transformations.session(sessionId).orElseThrow();
+                adapter.apply(context(owner, prepared, snapshot.get(), gameTime), List.copyOf(references));
+            } catch (RuntimeException | LinkageError exception) {
                 return failAndRevert(owner, sessionId, TransformationState.APPLYING, adapter.id() + " application failed: " + message(exception), gameTime);
             }
             for (TemporaryStateReference reference : references) {
@@ -104,6 +105,13 @@ public final class TransformationApplicationService {
         Objects.requireNonNull(owner, "owner");
         Objects.requireNonNull(sessionId, "sessionId");
         Objects.requireNonNull(reason, "reason");
+        Optional<TransformationSession> requested = transformations.session(sessionId);
+        if (requested.isEmpty()) {
+            return SessionTransitionResult.rejected("The requested session does not exist");
+        }
+        if (owner.isPresent() && !owner.get().getUUID().equals(requested.get().ownerId())) {
+            return SessionTransitionResult.rejected("The requested session does not belong to this player");
+        }
         SessionTransitionResult cleanup = transformations.requestCleanup(sessionId, reason, gameTime);
         if (!cleanup.accepted()) {
             ImitationDiagnostics.cleanupFailed(owner, sessionId, cleanup.message(), gameTime);
@@ -127,7 +135,7 @@ public final class TransformationApplicationService {
             TransformationReversionContext context = new TransformationReversionContext(server, owner, current, snapshot, reason, gameTime);
             try {
                 adapter.revert(context, references);
-            } catch (RuntimeException exception) {
+            } catch (RuntimeException | LinkageError exception) {
                 quarantine(sessionId, references, gameTime);
                 String detail = adapter.id() + " reversion failed: " + message(exception);
                 ImitationDiagnostics.cleanupFailed(owner, sessionId, detail, gameTime);
@@ -238,7 +246,7 @@ public final class TransformationApplicationService {
         return new TransformationApplicationContext(server, owner, session, snapshot, gameTime);
     }
 
-    private String message(RuntimeException exception) {
+    private String message(Throwable exception) {
         return message(exception.getMessage());
     }
 

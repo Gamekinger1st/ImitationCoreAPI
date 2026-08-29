@@ -146,8 +146,6 @@ class ImitatorSkillCopyPolicyTest {
         assertEquals(
                 List.of(
                         new ImitatorCopiedSkill(intrinsic, 100D),
-                        new ImitatorCopiedSkill(ultimate, 90D),
-                        new ImitatorCopiedSkill(unique, 80D),
                         new ImitatorCopiedSkill(extra, 70D)
                 ),
                 policy.select(snapshot, imitator, skillId -> {
@@ -159,7 +157,6 @@ class ImitatorSkillCopyPolicyTest {
         );
         assertEquals(
                 List.of(
-                        new ImitatorCopiedSkill(unique, 80D),
                         new ImitatorCopiedSkill(extra, 70D)
                 ),
                 policy.select(snapshot, imitator, skillId -> {
@@ -183,9 +180,9 @@ class ImitatorSkillCopyPolicyTest {
         ImitatorFormAbility uniqueAbility = new ClassifiedAbility(SkillClassification.UNIQUE);
         IdentitySnapshot snapshot = IdentitySnapshot.builder(ResourceLocation.fromNamespaceAndPath("test", "entity"), 0L).build();
 
-        assertTrue(policy.allows(ultimateAbility, snapshot, ImitatorSkillCopyAccess.SUPERIOR_EP));
+        assertFalse(policy.allows(ultimateAbility, snapshot, ImitatorSkillCopyAccess.SUPERIOR_EP));
         assertTrue(policy.allows(intrinsicAbility, snapshot, ImitatorSkillCopyAccess.SUPERIOR_EP));
-        assertTrue(policy.allows(uniqueAbility, snapshot, ImitatorSkillCopyAccess.INFERIOR_OR_EQUAL_EP));
+        assertFalse(policy.allows(uniqueAbility, snapshot, ImitatorSkillCopyAccess.INFERIOR_OR_EQUAL_EP));
         assertFalse(policy.allows(ultimateAbility, snapshot, ImitatorSkillCopyAccess.INFERIOR_OR_EQUAL_EP));
         assertFalse(policy.allows(intrinsicAbility, snapshot, ImitatorSkillCopyAccess.INFERIOR_OR_EQUAL_EP));
     }

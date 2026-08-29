@@ -40,6 +40,14 @@ class SnapshotSerializationTest {
         source.putString("Motion", "moving");
         source.putString("Passengers", "mounted");
         source.putString("ActiveEffects", "temporary effects");
+        source.putString("active_effects", "modern temporary effects");
+        source.putInt("HurtTime", 8);
+        source.putInt("DeathTime", 2);
+        source.putFloat("Health", 5F);
+        source.putBoolean("NoAI", true);
+        source.putBoolean("PersistenceRequired", true);
+        source.putString("Pose", "SLEEPING");
+        source.putString("equipment", "real item state");
         source.putString("Variant", "safe");
 
         CompoundTag sanitized = SnapshotNbtSanitizer.sanitizeEntityData(source);
@@ -50,8 +58,41 @@ class SnapshotSerializationTest {
         assertFalse(sanitized.contains("Motion"));
         assertFalse(sanitized.contains("Passengers"));
         assertFalse(sanitized.contains("ActiveEffects"));
+        assertFalse(sanitized.contains("active_effects"));
+        assertFalse(sanitized.contains("HurtTime"));
+        assertFalse(sanitized.contains("DeathTime"));
+        assertFalse(sanitized.contains("Health"));
+        assertFalse(sanitized.contains("NoAI"));
+        assertFalse(sanitized.contains("PersistenceRequired"));
+        assertFalse(sanitized.contains("Pose"));
+        assertFalse(sanitized.contains("equipment"));
         assertEquals("safe", sanitized.getString("Variant"));
         assertEquals("targeting data", source.getString("Brain"));
+    }
+
+    @Test
+    void playerBlueprintSanitizationKeepsOnlyRenderSafeEntityData() {
+        CompoundTag source = new CompoundTag();
+        source.putString("CustomName", "Copied Player");
+        source.putBoolean("CustomNameVisible", true);
+        source.putBoolean("Glowing", true);
+        source.putString("Inventory", "oversized inventory data");
+        source.putString("recipeBook", "oversized recipe data");
+        source.putString("abilities", "player abilities");
+        source.putString("EnderItems", "ender chest data");
+        source.putString("SelectedItem", "held item data");
+
+        CompoundTag sanitized = SnapshotNbtSanitizer.sanitizePlayerEntityData(source);
+
+        assertEquals("Copied Player", sanitized.getString("CustomName"));
+        assertEquals(true, sanitized.getBoolean("CustomNameVisible"));
+        assertEquals(true, sanitized.getBoolean("Glowing"));
+        assertFalse(sanitized.contains("Inventory"));
+        assertFalse(sanitized.contains("recipeBook"));
+        assertFalse(sanitized.contains("abilities"));
+        assertFalse(sanitized.contains("EnderItems"));
+        assertFalse(sanitized.contains("SelectedItem"));
+        assertEquals("oversized inventory data", source.getString("Inventory"));
     }
 
     @Test

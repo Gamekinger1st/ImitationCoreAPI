@@ -26,10 +26,10 @@ public final class ImitatorFormScreen extends Screen {
     private int pendingSelectionSlot = -1;
     private int pendingCommitSlot = -1;
     private boolean waitingForLibrary;
-    private String actionStatus = "";
+    private Component actionStatus = Component.empty();
 
     public ImitatorFormScreen(ImitatorMenuRequest request) {
-        super(Component.literal("Imitator Forms"));
+        super(Component.translatable("screen.imitationcoreapi.imitator_forms"));
         if (request == ImitatorMenuRequest.NONE) {
             throw new IllegalArgumentException("A form screen requires a menu request");
         }
@@ -51,22 +51,22 @@ public final class ImitatorFormScreen extends Screen {
         super.render(graphics, mouseX, mouseY, partialTick);
         graphics.drawCenteredString(font, title, width / 2, 15, 0xFFFFFF);
         if (library == null || waitingForLibrary) {
-            graphics.drawCenteredString(font, Component.literal("Loading form library..."), width / 2, 42, 0xA0A0A0);
+            graphics.drawCenteredString(font, Component.translatable("screen.imitationcoreapi.loading_forms"), width / 2, 42, 0xA0A0A0);
             return;
         }
         if (overwriteSlot >= 0) {
-            graphics.drawCenteredString(font, Component.literal("Replace the recording in slot " + (overwriteSlot + 1) + "?"), width / 2, 50, 0xFFAA00);
+            graphics.drawCenteredString(font, Component.translatable("screen.imitationcoreapi.replace_recording", overwriteSlot + 1), width / 2, 50, 0xFFAA00);
             return;
         }
-        String instruction = request == ImitatorMenuRequest.COMMIT_RECORD
+        Component instruction = request == ImitatorMenuRequest.COMMIT_RECORD
                 ? pendingRecordInstruction()
-                : "Choose a recorded form to transform into";
-        graphics.drawCenteredString(font, Component.literal(instruction), width / 2, 36, 0xA0A0A0);
-        if (!actionStatus.isEmpty()) {
-            graphics.drawCenteredString(font, Component.literal(actionStatus), width / 2, 48, 0xFFAA00);
+                : Component.translatable("screen.imitationcoreapi.choose_transform_form");
+        graphics.drawCenteredString(font, instruction, width / 2, 36, 0xA0A0A0);
+        if (!actionStatus.getString().isEmpty()) {
+            graphics.drawCenteredString(font, actionStatus, width / 2, 48, 0xFFAA00);
         }
         int pageCount = pageCount();
-        graphics.drawCenteredString(font, Component.literal("Page " + (page + 1) + " / " + pageCount), width / 2, height - 42, 0xA0A0A0);
+        graphics.drawCenteredString(font, Component.translatable("screen.imitationcoreapi.page", page + 1, pageCount), width / 2, height - 42, 0xA0A0A0);
     }
 
     @Override
@@ -88,7 +88,7 @@ public final class ImitatorFormScreen extends Screen {
                             onClose();
                             return;
                         }
-                        actionStatus = "Selection was not accepted";
+                        actionStatus = Component.translatable("screen.imitationcoreapi.selection_rejected");
                     }
                     if (pendingCommitSlot >= 0) {
                         int committedSlot = pendingCommitSlot;
@@ -98,7 +98,7 @@ public final class ImitatorFormScreen extends Screen {
                             onClose();
                             return;
                         }
-                        actionStatus = "Recording was not stored";
+                        actionStatus = Component.translatable("screen.imitationcoreapi.recording_not_stored");
                     }
                     overwriteSlot = -1;
                     rebuild();
@@ -109,12 +109,12 @@ public final class ImitatorFormScreen extends Screen {
         clearWidgets();
         library = ImitationApi.clientImitatorFormLibrary().current().orElse(library);
         if (library == null || waitingForLibrary) {
-            addRenderableWidget(Button.builder(Component.literal("Close"), button -> onClose()).bounds(width / 2 - 50, height - 28, 100, 20).build());
+            addRenderableWidget(Button.builder(Component.translatable("screen.imitationcoreapi.close"), button -> onClose()).bounds(width / 2 - 50, height - 28, 100, 20).build());
             return;
         }
         if (overwriteSlot >= 0) {
-            addRenderableWidget(Button.builder(Component.literal("Confirm replacement"), button -> commit(overwriteSlot)).bounds(width / 2 - 104, 82, 100, 20).build());
-            addRenderableWidget(Button.builder(Component.literal("Cancel"), button -> {
+            addRenderableWidget(Button.builder(Component.translatable("screen.imitationcoreapi.confirm_replacement"), button -> commit(overwriteSlot)).bounds(width / 2 - 104, 82, 100, 20).build());
+            addRenderableWidget(Button.builder(Component.translatable("screen.imitationcoreapi.cancel"), button -> {
                 overwriteSlot = -1;
                 rebuild();
             }).bounds(width / 2 + 4, 82, 100, 20).build());
@@ -131,24 +131,24 @@ public final class ImitatorFormScreen extends Screen {
             int row = index / COLUMNS;
             Optional<ImitatorFormLibraryPayload.FormSlot> form = form(slot);
             boolean selected = library.selectedSlot().isPresent() && library.selectedSlot().getAsInt() == slot;
-            String label = "Slot " + (slot + 1) + ": " + formLabel(form) + (selected ? " *" : "");
-            Button button = Button.builder(Component.literal(label), ignored -> chooseSlot(slot, form.isPresent())).bounds(left + column * 104, 58 + row * 22, 100, 20).build();
+            Component label = Component.translatable("screen.imitationcoreapi.slot", slot + 1, formLabel(form), selected ? " *" : "");
+            Button button = Button.builder(label, ignored -> chooseSlot(slot, form.isPresent())).bounds(left + column * 104, 58 + row * 22, 100, 20).build();
             button.active = pendingSelectionSlot < 0 && pendingCommitSlot < 0 && (request == ImitatorMenuRequest.COMMIT_RECORD || form.isPresent());
             addRenderableWidget(button);
         }
         if (page > 0) {
-            addRenderableWidget(Button.builder(Component.literal("Previous"), button -> {
+            addRenderableWidget(Button.builder(Component.translatable("screen.imitationcoreapi.previous"), button -> {
                 page--;
                 rebuild();
             }).bounds(width / 2 - 104, height - 28, 100, 20).build());
         }
         if (page + 1 < pageCount()) {
-            addRenderableWidget(Button.builder(Component.literal("Next"), button -> {
+            addRenderableWidget(Button.builder(Component.translatable("screen.imitationcoreapi.next"), button -> {
                 page++;
                 rebuild();
             }).bounds(width / 2 + 4, height - 28, 100, 20).build());
         }
-        addRenderableWidget(Button.builder(Component.literal("Refresh"), button -> refresh()).bounds(width / 2 - 50, height - 54, 100, 20).build());
+        addRenderableWidget(Button.builder(Component.translatable("screen.imitationcoreapi.refresh"), button -> refresh()).bounds(width / 2 - 50, height - 54, 100, 20).build());
     }
 
     private void chooseSlot(int slot, boolean occupied) {
@@ -162,7 +162,7 @@ public final class ImitatorFormScreen extends Screen {
             return;
         }
         pendingSelectionSlot = slot;
-        actionStatus = "Selecting form in slot " + (slot + 1) + "...";
+        actionStatus = Component.translatable("screen.imitationcoreapi.selecting_form", slot + 1);
         PacketDistributor.sendToServer(new SelectImitatorFormPayload(slot));
         rebuild();
     }
@@ -170,14 +170,14 @@ public final class ImitatorFormScreen extends Screen {
     private void commit(int slot) {
         pendingCommitSlot = slot;
         overwriteSlot = -1;
-        actionStatus = "Storing recording in slot " + (slot + 1) + "...";
+        actionStatus = Component.translatable("screen.imitationcoreapi.storing_recording", slot + 1);
         PacketDistributor.sendToServer(new CommitImitatorRecordPayload(slot));
         rebuild();
     }
 
     private void refresh() {
         waitingForLibrary = true;
-        actionStatus = "";
+        actionStatus = Component.empty();
         rebuild();
         PacketDistributor.sendToServer(new RequestImitatorFormLibraryPayload());
     }
@@ -190,18 +190,21 @@ public final class ImitatorFormScreen extends Screen {
         return Math.max(1, (library.slotCapacity() + PAGE_SIZE - 1) / PAGE_SIZE);
     }
 
-    private String pendingRecordInstruction() {
+    private Component pendingRecordInstruction() {
         return library.pendingRecord()
-                .map(record -> "Choose a slot for the pending " + Math.round(record.precision() * 100D) + "% recording")
-                .orElse("Choose a slot for the pending recording");
+                .<Component>map(record -> Component.translatable("screen.imitationcoreapi.choose_record_slot_precision", Math.round(record.precision() * 100D)))
+                .orElseGet(() -> Component.translatable("screen.imitationcoreapi.choose_record_slot"));
     }
 
-    private static String formLabel(Optional<ImitatorFormLibraryPayload.FormSlot> form) {
+    private static Component formLabel(Optional<ImitatorFormLibraryPayload.FormSlot> form) {
         if (form.isEmpty()) {
-            return "Empty";
+            return Component.translatable("screen.imitationcoreapi.empty");
         }
         ImitatorFormLibraryPayload.FormSlot slot = form.get();
-        String name = slot.displayName().isBlank() ? "Unknown form" : slot.displayName();
-        return name.length() > 16 ? name.substring(0, 16) : name;
+        if (slot.displayName().isBlank()) {
+            return Component.translatable("screen.imitationcoreapi.unknown_form");
+        }
+        String name = slot.displayName();
+        return Component.literal(name.length() > 16 ? name.substring(0, 16) : name);
     }
 }

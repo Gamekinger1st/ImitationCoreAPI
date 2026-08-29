@@ -19,4 +19,18 @@ class ImitatorMenuBusTest {
 
         assertEquals(1, requests.get());
     }
+
+    @Test
+    void aBrokenListenerDoesNotBlockOtherDependents() {
+        ImitatorMenuBus bus = new ImitatorMenuBus();
+        AtomicInteger requests = new AtomicInteger();
+        bus.register(request -> {
+            throw new IllegalStateException("broken addon");
+        });
+        bus.register(request -> requests.incrementAndGet());
+
+        bus.post(ImitatorMenuRequest.SELECT_TRANSFORM_FORM);
+
+        assertEquals(1, requests.get());
+    }
 }

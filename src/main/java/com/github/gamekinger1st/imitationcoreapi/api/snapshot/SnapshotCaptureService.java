@@ -19,6 +19,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.Objects;
@@ -40,7 +41,7 @@ public final class SnapshotCaptureService {
         if (entityType == null) {
             throw new SnapshotCaptureException("The target entity type is not registered");
         }
-        CompoundTag entityData = SnapshotNbtSanitizer.sanitizeEntityData(subject.saveWithoutId(new CompoundTag()));
+        CompoundTag entityData = sanitizedEntityData(subject);
         CompoundTag visualData = new CompoundTag();
         visualData.putString("pose", subject.getPose().name());
         visualData.putFloat("y_rot", subject.getYRot());
@@ -82,21 +83,19 @@ public final class SnapshotCaptureService {
             if (!(adapter instanceof SnapshotCaptureAdapter captureAdapter)) {
                 continue;
             }
-            CompatibilityAssessment adapterAssessment = Objects.requireNonNull(captureAdapter.assess(builder.build(limits)), "adapter assessment");
-            assessment = assessment.combine(adapterAssessment);
-            if (!assessment.level().isUsable()) {
-                throw new SnapshotCaptureException("Snapshot capture is unsupported: " + String.join("; ", assessment.reasons()));
-            }
             try {
                 captureAdapter.capture(context, builder);
             } catch (RuntimeException exception) {
                 throw new SnapshotCaptureException("Snapshot capture adapter failed: " + captureAdapter.id(), exception);
             }
+            CompatibilityAssessment adapterAssessment = Objects.requireNonNull(captureAdapter.assess(builder.build(limits)), "adapter assessment");
+            assessment = assessment.combine(adapterAssessment);
+            if (!assessment.level().isUsable()) {
+                throw new SnapshotCaptureException("Snapshot capture is unsupported: " + String.join("; ", assessment.reasons()));
+            }
         }
         IdentitySnapshot snapshot = builder.build(limits);
-        if (adapters.adapters(AdapterKind.GAMEPLAY).isEmpty()) {
-            assessment = assessment.combine(CompatibilityAssessment.visual("No gameplay adapter has been applied"));
-        } else {
+        if (!adapters.adapters(AdapterKind.GAMEPLAY).isEmpty()) {
             assessment = assessment.combine(adapters.assess(snapshot, java.util.List.of(AdapterKind.GAMEPLAY)));
         }
         ImitationApi.events().post(new TransformationEvent(TransformationEventType.SNAPSHOT_CAPTURED, requesterId, Optional.of(snapshot), Optional.empty(), Optional.empty()));
@@ -115,6 +114,7 @@ public final class SnapshotCaptureService {
                 continue;
             }
             CompoundTag tag = new CompoundTag();
+            tag.put("stack", stack.save(living.registryAccess()));
             tag.putString("item", itemId.toString());
             tag.putInt("count", stack.getCount());
             tag.putInt("damage", stack.getDamageValue());
@@ -124,11 +124,46 @@ public final class SnapshotCaptureService {
         return equipment;
     }
 
+    private static CompoundTag sanitizedEntityData(Entity subject) {
+        if (subject instanceof Player) {
+            return SnapshotNbtSanitizer.sanitizePlayerEntityData(playerEntityData(subject));
+        }
+        CompoundTag saved = subject.saveWithoutId(new CompoundTag());
+        return SnapshotNbtSanitizer.sanitizeEntityData(saved);
+    }
+
+    private static CompoundTag playerEntityData(Entity subject) {
+        CompoundTag tag = new CompoundTag();
+        tag.putBoolean("Silent", subject.isSilent());
+        tag.putBoolean("Glowing", subject.isCurrentlyGlowing());
+        return tag;
+    }
+
     private static CompoundTag attributeData(LivingEntity living) {
         CompoundTag attributes = new CompoundTag();
         primePhysicalAttributes(living);
-        ListTag values = living.getAttributes().save();
-        attributes.put("values", values.copy());
+        ListTag saved = living.getAttributes().save();
+        ListTag values = new ListTag();
+        for (int index = 0; index < saved.size(); index++) {
+            CompoundTag source = saved.getCompound(index);
+            if (!source.contains("id", net.minecraft.nbt.Tag.TAG_STRING)
+                    || !source.contains("base", net.minecraft.nbt.Tag.TAG_DOUBLE)) {
+                continue;
+            }
+            CompoundTag value = new CompoundTag();
+            value.putString("id", source.getString("id"));
+            value.putDouble("base", source.getDouble("base"));
+            ResourceLocation id = ResourceLocation.tryParse(source.getString("id"));
+            double effective = id == null
+                    ? source.getDouble("base")
+                    : BuiltInRegistries.ATTRIBUTE.getHolder(id)
+                            .map(living::getAttribute)
+                            .map(instance -> instance.getValue())
+                            .orElse(source.getDouble("base"));
+            value.putDouble("value", effective);
+            values.add(value);
+        }
+        attributes.put("values", values);
         return attributes;
     }
 

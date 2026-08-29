@@ -42,6 +42,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 public final class ImitatorHandlerService {
+    public static final String PERFECT_FORM_BASELINE_KEY = "imitationcoreapi_perfect_form";
+    public static final String PERFECT_FORM_SCALE_BASELINE_KEY = "imitationcoreapi_perfect_form_scale";
     private static final ResourceLocation PLAYER_ENTITY_TYPE = ResourceLocation.withDefaultNamespace("player");
     private final TransformationService transformations;
     private final SnapshotCaptureService captures;
@@ -64,6 +66,9 @@ public final class ImitatorHandlerService {
     public SnapshotCaptureResult record(ServerPlayer requester, Entity target) {
         Objects.requireNonNull(requester, "requester");
         Objects.requireNonNull(target, "target");
+        ImitatorTargetEligibility.rejection(target).ifPresent(message -> {
+            throw new IllegalArgumentException(message);
+        });
         SnapshotCaptureResult result = captures.capture(target, Optional.of(requester.getUUID()), requester.level().getGameTime());
         transformations.storeSnapshot(result.snapshot());
         return result;
@@ -179,12 +184,17 @@ public final class ImitatorHandlerService {
     }
 
     public ImitatorTransformOutcome beginSelectedTransform(ServerPlayer player, ImitatorProgressionPolicy progressionPolicy, ImitatorMirrorSyncPolicy mirrorSyncPolicy, ImitatorSkillCopyPolicy skillCopyPolicy, boolean mastered, ResourceLocation imitatorSkillId, ImitatorTransformDurationPolicy durationPolicy) {
+        return beginSelectedTransform(player, progressionPolicy, mirrorSyncPolicy, skillCopyPolicy, mastered, imitatorSkillId, durationPolicy, ImitatorTransformationModifiers.DEFAULT);
+    }
+
+    public ImitatorTransformOutcome beginSelectedTransform(ServerPlayer player, ImitatorProgressionPolicy progressionPolicy, ImitatorMirrorSyncPolicy mirrorSyncPolicy, ImitatorSkillCopyPolicy skillCopyPolicy, boolean mastered, ResourceLocation imitatorSkillId, ImitatorTransformDurationPolicy durationPolicy, ImitatorTransformationModifiers transformationModifiers) {
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(progressionPolicy, "progressionPolicy");
         Objects.requireNonNull(mirrorSyncPolicy, "mirrorSyncPolicy");
         Objects.requireNonNull(skillCopyPolicy, "skillCopyPolicy");
         Objects.requireNonNull(imitatorSkillId, "imitatorSkillId");
         Objects.requireNonNull(durationPolicy, "durationPolicy");
+        Objects.requireNonNull(transformationModifiers, "transformationModifiers");
         ImitatorActionResult validation = validateSelectedTransform(player, progressionPolicy, mirrorSyncPolicy);
         if (!validation.accepted()) {
             ImitationDiagnostics.rejected(player, validation.message());
@@ -201,8 +211,15 @@ public final class ImitatorHandlerService {
         if (effectiveSnapshot != snapshot.get()) {
             transformations.storeSnapshot(effectiveSnapshot);
         }
-        double gameplayScale = mirrorScale(player, effectiveSnapshot, form, library.mirrorSyncEnabled(), mirrorSyncPolicy.tensuraCopyPolicy());
-        SessionTransitionResult started = beginTransform(player, form.snapshotId(), scopeFor(library), gameplayScale);
+        if (skillCopyPolicy.enabled() && !form.skillCopyAllowed()) {
+            return new ImitatorTransformOutcome(SessionTransitionResult.rejected("The selected form does not permit copied skills"), Optional.empty());
+        }
+        ImitatorSkillCopyAccess copyAccess = library.mirrorSyncEnabled()
+                ? ImitatorSkillCopyAccess.POLICY
+                : copyAccess(player, effectiveSnapshot);
+        List<ImitatorCopiedSkill> selectedSkills = selectedFormSkills(effectiveSnapshot, skillCopyPolicy, imitatorSkillId, copyAccess, mastered);
+        double perfectFormScale = mirrorScale(player, effectiveSnapshot, form, library.mirrorSyncEnabled(), mirrorSyncPolicy.tensuraCopyPolicy());
+        SessionTransitionResult started = beginTransformInternal(player, form.snapshotId(), scopeFor(library), 1D, library.mirrorSyncEnabled(), perfectFormScale, transformationModifiers);
         if (!started.accepted()) {
             return new ImitatorTransformOutcome(started, Optional.empty());
         }
@@ -210,14 +227,8 @@ public final class ImitatorHandlerService {
         if (!applied.accepted()) {
             return new ImitatorTransformOutcome(applied, Optional.empty());
         }
-        SessionTransitionResult suppression = new OwnerSkillSuppressionService(transformations).suppressOriginalSkills(player, applied.session().orElseThrow().sessionId(), List.of(imitatorSkillId));
-        if (!suppression.accepted()) {
-            requestReversion(player, applied.session().orElseThrow().sessionId(), TransformationLifecycleReason.APPLY_FAILURE);
-            String message = "Owner skill suppression failed: " + suppression.message();
-            ImitationDiagnostics.rejected(player, message);
-            return new ImitatorTransformOutcome(SessionTransitionResult.rejected(message), Optional.empty());
-        }
-        SessionTransitionResult policyAttached = attachSkillCopyPolicy(player, applied.session().orElseThrow().sessionId(), skillCopyPolicy);
+        TransformationSession activeSession = applied.session().orElseThrow();
+        SessionTransitionResult policyAttached = attachSkillCopyPolicy(player, activeSession.sessionId(), skillCopyPolicy, copyAccess, mastered);
         if (!policyAttached.accepted()) {
             requestReversion(player, applied.session().orElseThrow().sessionId(), TransformationLifecycleReason.APPLY_FAILURE);
             String message = "Copied skill policy failed: " + policyAttached.message();
@@ -231,10 +242,23 @@ public final class ImitatorHandlerService {
             ImitationDiagnostics.rejected(player, message);
             return new ImitatorTransformOutcome(SessionTransitionResult.rejected(message), Optional.empty());
         }
+        SkillCopyBatch copied = copyFormSkills(player, durationAttached.session().orElseThrow(), selectedSkills);
+        if (!copied.successful()) {
+            requestReversion(player, durationAttached.session().orElseThrow().sessionId(), TransformationLifecycleReason.APPLY_FAILURE);
+            String message = "Copied skill grant failed: " + copied.failure();
+            ImitationDiagnostics.rejected(player, message);
+            return new ImitatorTransformOutcome(SessionTransitionResult.rejected(message), Optional.empty());
+        }
+        SessionTransitionResult suppression = new OwnerSkillSuppressionService(transformations).suppressOriginalSkills(player, durationAttached.session().orElseThrow().sessionId(), List.of(imitatorSkillId));
+        if (!suppression.accepted()) {
+            requestReversion(player, durationAttached.session().orElseThrow().sessionId(), TransformationLifecycleReason.APPLY_FAILURE);
+            String message = "Owner skill suppression failed: " + suppression.message();
+            ImitationDiagnostics.rejected(player, message);
+            return new ImitatorTransformOutcome(SessionTransitionResult.rejected(message), Optional.empty());
+        }
         new MobImitationTargetingService(transformations).clearExistingTargets(player);
-        int copiedSkills = copyFormSkills(player, durationAttached.session().orElseThrow(), skillCopyPolicy, imitatorSkillId);
         ImitatorFormProgression progression = refineSelectedForm(player, progressionPolicy, ImitatorProgressionAction.TRANSFORM);
-        return new ImitatorTransformOutcome(durationAttached, Optional.of(progression), copiedSkills);
+        return new ImitatorTransformOutcome(suppression, Optional.of(progression), copied.count());
     }
 
     public ImitatorReplicaOutcome beginSelectedReplica(ServerPlayer player, ImitatorProgressionPolicy progressionPolicy, ImitatorReplicaPolicy replicaPolicy, boolean mastered) {
@@ -256,7 +280,13 @@ public final class ImitatorHandlerService {
         if (!started.accepted()) {
             return new ImitatorReplicaOutcome(started, Optional.empty());
         }
-        SessionTransitionResult applied = applications.apply(player, started.session().orElseThrow().sessionId());
+        long expires = Math.addExact(player.level().getGameTime(), replicaPolicy.lifetimeTicks());
+        SessionTransitionResult expiring = transformations.updateExpiration(started.session().orElseThrow().sessionId(), java.util.OptionalLong.of(expires), player.level().getGameTime());
+        if (!expiring.accepted()) {
+            requestReversion(player, started.session().orElseThrow().sessionId(), TransformationLifecycleReason.APPLY_FAILURE);
+            return new ImitatorReplicaOutcome(expiring, Optional.empty());
+        }
+        SessionTransitionResult applied = applications.apply(player, expiring.session().orElseThrow().sessionId());
         if (!applied.accepted()) {
             return new ImitatorReplicaOutcome(applied, Optional.empty());
         }
@@ -304,12 +334,16 @@ public final class ImitatorHandlerService {
         if (selected.get().precision() < progressionPolicy.minimumPrecision()) {
             return rejectedAction(player, "The selected form does not have enough precision to transform");
         }
-        if (library.mirrorSyncEnabled() && !progressionPolicy.allowsMirrorSync(selected.get())) {
+        if (library.mirrorSyncEnabled() && (!selected.get().mirrorSyncAllowed() || !progressionPolicy.allowsMirrorSync(selected.get()))) {
             return rejectedAction(player, "Perfect Form requires a more precise recorded form");
         }
         Optional<IdentitySnapshot> snapshot = transformations.snapshot(selected.get().snapshotId());
         if (snapshot.isEmpty()) {
             return rejectedAction(player, "The selected form is no longer available");
+        }
+        Optional<String> eligibilityRejection = ImitatorTargetEligibility.rejection(snapshot.get(), player.serverLevel());
+        if (eligibilityRejection.isPresent()) {
+            return rejectedAction(player, eligibilityRejection.get());
         }
         if (library.mirrorSyncEnabled()) {
             Optional<TensuraStateSnapshot> targetState = TensuraStateExtensions.find(snapshot.get().extensions());
@@ -354,6 +388,10 @@ public final class ImitatorHandlerService {
         if (snapshot.isEmpty()) {
             return rejectedAction(player, "The selected form is no longer available");
         }
+        Optional<String> eligibilityRejection = ImitatorTargetEligibility.rejection(snapshot.get(), player.serverLevel());
+        if (eligibilityRejection.isPresent()) {
+            return rejectedAction(player, eligibilityRejection.get());
+        }
         if (!replicaEntitySupported(snapshot.get(), replicaPolicy, player.serverLevel())) {
             return rejectedAction(player, "The selected form cannot produce a living replica");
         }
@@ -380,6 +418,11 @@ public final class ImitatorHandlerService {
             ImitationDiagnostics.rejected(player, "The requested snapshot does not exist");
             return SessionTransitionResult.rejected("The requested snapshot does not exist");
         }
+        Optional<String> eligibilityRejection = ImitatorTargetEligibility.rejection(snapshot.get(), player.serverLevel());
+        if (eligibilityRejection.isPresent()) {
+            ImitationDiagnostics.rejected(player, eligibilityRejection.get());
+            return SessionTransitionResult.rejected(eligibilityRejection.get());
+        }
         if (!replicaEntitySupported(snapshot.get(), replicaPolicy, player.serverLevel())) {
             ImitationDiagnostics.rejected(player, "The requested snapshot cannot create a replica");
             return SessionTransitionResult.rejected("The requested snapshot cannot create a replica");
@@ -393,22 +436,53 @@ public final class ImitatorHandlerService {
     }
 
     public SessionTransitionResult beginTransform(ServerPlayer player, UUID snapshotId, TransformationScope scope, double gameplayScale) {
+        return beginTransform(player, snapshotId, scope, gameplayScale, ImitatorTransformationModifiers.DEFAULT);
+    }
+
+    public SessionTransitionResult beginTransform(ServerPlayer player, UUID snapshotId, TransformationScope scope, double gameplayScale, ImitatorTransformationModifiers transformationModifiers) {
+        return beginTransformInternal(player, snapshotId, scope, gameplayScale, false, 0D, transformationModifiers);
+    }
+
+    public SessionTransitionResult beginPerfectForm(ServerPlayer player, UUID snapshotId, double perfectFormScale) {
+        return beginPerfectForm(player, snapshotId, perfectFormScale, ImitatorTransformationModifiers.DEFAULT);
+    }
+
+    public SessionTransitionResult beginPerfectForm(ServerPlayer player, UUID snapshotId, double perfectFormScale, ImitatorTransformationModifiers transformationModifiers) {
+        return beginTransformInternal(player, snapshotId, TransformationScope.GAMEPLAY, 1D, true, perfectFormScale, transformationModifiers);
+    }
+
+    private SessionTransitionResult beginTransformInternal(ServerPlayer player, UUID snapshotId, TransformationScope scope, double gameplayScale, boolean perfectForm, double perfectFormScale, ImitatorTransformationModifiers transformationModifiers) {
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(snapshotId, "snapshotId");
         Objects.requireNonNull(scope, "scope");
+        Objects.requireNonNull(transformationModifiers, "transformationModifiers");
         if (!Double.isFinite(gameplayScale) || gameplayScale < 0D || gameplayScale > 1D) {
             throw new IllegalArgumentException("gameplayScale must be between zero and one");
+        }
+        if (!Double.isFinite(perfectFormScale) || perfectFormScale < 0D || perfectFormScale > 1D) {
+            throw new IllegalArgumentException("perfectFormScale must be between zero and one");
         }
         Optional<IdentitySnapshot> snapshot = transformations.snapshot(snapshotId);
         if (snapshot.isEmpty()) {
             ImitationDiagnostics.rejected(player, "The requested snapshot does not exist");
             return SessionTransitionResult.rejected("The requested snapshot does not exist");
         }
+        Optional<String> eligibilityRejection = ImitatorTargetEligibility.rejection(snapshot.get(), player.serverLevel());
+        if (eligibilityRejection.isPresent()) {
+            ImitationDiagnostics.rejected(player, eligibilityRejection.get());
+            return SessionTransitionResult.rejected(eligibilityRejection.get());
+        }
         CompatibilityAssessment compatibility = compatibilityFor(snapshot.get(), scope);
         if (scope == TransformationScope.GAMEPLAY && compatibility.level() != CompatibilityLevel.FULL) {
             ImitationDiagnostics.compatibility(player, compatibility);
         }
-        return transformations.beginSession(player.getUUID(), snapshotId, scope, gameplayScale, captureBaseline(player), compatibility, player.level().getGameTime());
+        BaselineSnapshot captured = captureBaseline(player);
+        CompoundTag baselineData = captured.playerData();
+        baselineData.putBoolean(PERFECT_FORM_BASELINE_KEY, perfectForm);
+        baselineData.putDouble(PERFECT_FORM_SCALE_BASELINE_KEY, perfectFormScale);
+        ImitatorTransformationModifierState.store(baselineData, transformationModifiers);
+        BaselineSnapshot baseline = new BaselineSnapshot(captured.schemaVersion(), baselineData, captured.extensions());
+        return transformations.beginSession(player.getUUID(), snapshotId, scope, gameplayScale, baseline, compatibility, player.level().getGameTime());
     }
 
     public TransformationScope selectedTransformationScope(ServerPlayer player) {
@@ -460,14 +534,14 @@ public final class ImitatorHandlerService {
         if (snapshot.isEmpty()) {
             return rejectedAction(player, "The active Imitator form is no longer available");
         }
-        return ImitatorFormAbilities.activate(player, snapshot.get(), activeSkillCopyPolicy(session.get()), copyAccess(player, snapshot.get()));
+        return ImitatorFormAbilities.activate(player, snapshot.get(), activeSkillCopyPolicy(session.get()), ImitatorSkillCopyPolicyState.access(session.get()), ImitatorSkillCopyPolicyState.mastered(session.get()));
     }
 
     public Optional<ImitatorFormStatDelta> tickFormTraits(ServerPlayer player) {
         Objects.requireNonNull(player, "player");
         Optional<ImitatorFormStatDelta> delta = new ImitatorFormProgressionService(transformations, forms).reconcile(player);
         activePresentationSession(player).ifPresent(session -> transformations.snapshot(session.snapshotId())
-                .ifPresent(snapshot -> ImitatorFormAbilities.tick(player, snapshot, activeSkillCopyPolicy(session), copyAccess(player, snapshot))));
+                .ifPresent(snapshot -> ImitatorFormAbilities.tick(player, snapshot, activeSkillCopyPolicy(session), ImitatorSkillCopyPolicyState.access(session), ImitatorSkillCopyPolicyState.mastered(session))));
         return delta;
     }
 
@@ -479,6 +553,29 @@ public final class ImitatorHandlerService {
                 .map(session -> requestReversion(player, session.sessionId(), TransformationLifecycleReason.DURATION_EXPIRED));
     }
 
+    public Optional<SessionTransitionResult> revertIfControllerSkillMissing(ServerPlayer player) {
+        Objects.requireNonNull(player, "player");
+        Optional<TransformationSession> active = activePresentationSession(player);
+        if (active.isEmpty()) {
+            return Optional.empty();
+        }
+        java.util.Set<ResourceLocation> controllers = OwnerSkillSuppressionService.controllerSkills(active.get());
+        if (controllers.isEmpty()) {
+            return Optional.empty();
+        }
+        Optional<com.github.gamekinger1st.imitationcoreapi.api.skill.SkillSnapshot> current = ImitationApi.skillBridges().capture(player);
+        if (current.isEmpty()) {
+            return Optional.empty();
+        }
+        java.util.Set<ResourceLocation> learned = current.get().skills().stream()
+                .map(com.github.gamekinger1st.imitationcoreapi.api.skill.SkillState::skillId)
+                .collect(java.util.stream.Collectors.toSet());
+        if (learned.containsAll(controllers)) {
+            return Optional.empty();
+        }
+        return Optional.of(requestReversion(player, active.get().sessionId(), TransformationLifecycleReason.SKILL_REMOVED));
+    }
+
     public List<TransformationSession> sessionsFor(ServerPlayer player) {
         Objects.requireNonNull(player, "player");
         return transformations.sessionsForOwner(player.getUUID()).stream()
@@ -488,12 +585,11 @@ public final class ImitatorHandlerService {
 
     public BaselineSnapshot captureBaseline(ServerPlayer player) {
         Objects.requireNonNull(player, "player");
-        CompoundTag playerData = player.saveWithoutId(new CompoundTag());
         List<SnapshotExtension> extensions = ImitationApi.tensuraStates().capture(player)
                 .map(TensuraStateExtensions::create)
                 .map(List::of)
                 .orElseGet(List::of);
-        return new BaselineSnapshot(BaselineSnapshot.CURRENT_SCHEMA_VERSION, playerData, extensions);
+        return new BaselineSnapshot(BaselineSnapshot.CURRENT_SCHEMA_VERSION, new CompoundTag(), extensions);
     }
 
     private boolean owns(ServerPlayer player, UUID sessionId) {
@@ -519,33 +615,38 @@ public final class ImitatorHandlerService {
         return form.stats().isEmpty() ? snapshot : form.stats().mergeInto(snapshot);
     }
 
-    private int copyFormSkills(ServerPlayer player, TransformationSession session, ImitatorSkillCopyPolicy policy, ResourceLocation imitatorSkillId) {
+    private List<ImitatorCopiedSkill> selectedFormSkills(IdentitySnapshot snapshot, ImitatorSkillCopyPolicy policy, ResourceLocation imitatorSkillId, ImitatorSkillCopyAccess access, boolean mastered) {
         if (!policy.enabled()) {
-            return 0;
+            return List.of();
         }
-        Optional<IdentitySnapshot> snapshot = transformations.snapshot(session.snapshotId());
-        Optional<ImitatorSkillCopySnapshot> copiedSkills = snapshot.flatMap(value -> ImitatorSkillCopyExtensions.find(value.extensions()));
+        Optional<ImitatorSkillCopySnapshot> copiedSkills = ImitatorSkillCopyExtensions.find(snapshot.extensions());
         if (copiedSkills.isEmpty()) {
-            return 0;
+            return List.of();
         }
         ImitatorSkillCopySnapshot copySnapshot = copiedSkills.get();
         if (!ImitationApi.skillBridges().activeBridgeId().filter(copySnapshot.bridgeId()::equals).isPresent()) {
-            return 0;
+            return List.of();
         }
-        ImitatorSkillCopyAccess access = snapshot.map(value -> copyAccess(player, value)).orElse(ImitatorSkillCopyAccess.INFERIOR_OR_EQUAL_EP);
+        return policy.select(copySnapshot, imitatorSkillId, skillId -> ImitationApi.skillBridges().classify(copySnapshot.bridgeId(), skillId), access, mastered);
+    }
+
+    private SkillCopyBatch copyFormSkills(ServerPlayer player, TransformationSession session, List<ImitatorCopiedSkill> selectedSkills) {
         TemporarySkillService temporarySkills = new TemporarySkillService(transformations);
         int granted = 0;
-        for (ImitatorCopiedSkill copiedSkill : policy.select(copySnapshot, imitatorSkillId, skillId -> ImitationApi.skillBridges().classify(copySnapshot.bridgeId(), skillId), access)) {
+        ImitatorSkillCopyPolicy policy = activeSkillCopyPolicy(session);
+        for (ImitatorCopiedSkill copiedSkill : selectedSkills) {
             TemporarySkillGrantResult result = temporarySkills.grant(player, session.sessionId(), copiedSkill.skillId(), policy.temporaryRemoveTime(), copiedSkill.mastery());
             if (result.operation().successful()) {
                 granted++;
+            } else {
+                return new SkillCopyBatch(false, granted, copiedSkill.skillId() + ": " + result.operation().detail());
             }
         }
-        return granted;
+        return new SkillCopyBatch(true, granted, "");
     }
 
-    private SessionTransitionResult attachSkillCopyPolicy(ServerPlayer player, UUID sessionId, ImitatorSkillCopyPolicy policy) {
-        return transformations.addTemporaryState(sessionId, ImitatorSkillCopyPolicyState.create(sessionId, policy), player.level().getGameTime());
+    private SessionTransitionResult attachSkillCopyPolicy(ServerPlayer player, UUID sessionId, ImitatorSkillCopyPolicy policy, ImitatorSkillCopyAccess access, boolean mastered) {
+        return transformations.addTemporaryState(sessionId, ImitatorSkillCopyPolicyState.create(sessionId, policy, access, mastered), player.level().getGameTime());
     }
 
     private SessionTransitionResult attachDurationPolicy(ServerPlayer player, UUID sessionId, ImitatorTransformDurationPolicy durationPolicy) {
@@ -566,15 +667,20 @@ public final class ImitatorHandlerService {
         return ImitatorSkillCopyAccess.INFERIOR_OR_EQUAL_EP;
     }
 
+    private record SkillCopyBatch(boolean successful, int count, String failure) {
+    }
+
     private static TransformationScope scopeFor(ImitatorFormLibrary library) {
-        return library.mirrorSyncEnabled() ? TransformationScope.GAMEPLAY : TransformationScope.SURFACE;
+        return TransformationScope.GAMEPLAY;
     }
 
     private static CompatibilityAssessment compatibilityFor(IdentitySnapshot snapshot, TransformationScope scope) {
         return switch (scope) {
             case SURFACE -> CompatibilityAssessment.visual("Surface imitation applies no gameplay state");
             case REPLICA -> CompatibilityAssessment.visual("Replica spawns a temporary entity copy");
-            case GAMEPLAY -> ImitationApi.adapters().assess(snapshot, List.of(AdapterKind.GAMEPLAY));
+            case GAMEPLAY -> ImitationApi.adapters().adapters(AdapterKind.GAMEPLAY).isEmpty()
+                    ? CompatibilityAssessment.visual("No gameplay compatibility adapter assessed this form")
+                    : ImitationApi.adapters().assess(snapshot, List.of(AdapterKind.GAMEPLAY));
         };
     }
 
@@ -662,6 +768,10 @@ public final class ImitatorHandlerService {
         }
         if (!target.isAlive()) {
             return Optional.of("The target is no longer alive");
+        }
+        Optional<String> eligibilityRejection = ImitatorTargetEligibility.rejection(target);
+        if (eligibilityRejection.isPresent()) {
+            return eligibilityRejection;
         }
         if (!actionPolicy.allowPlayerTargets() && target instanceof Player) {
             return Optional.of("Player forms are disabled by server policy");

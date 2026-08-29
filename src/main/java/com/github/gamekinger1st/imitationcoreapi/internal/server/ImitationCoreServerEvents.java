@@ -1,5 +1,6 @@
 package com.github.gamekinger1st.imitationcoreapi.internal.server;
 
+import com.github.gamekinger1st.imitationcoreapi.api.ImitationApi;
 import com.github.gamekinger1st.imitationcoreapi.api.service.ImitationCoreServices;
 import com.github.gamekinger1st.imitationcoreapi.api.application.TransformationApplicationService;
 import com.github.gamekinger1st.imitationcoreapi.api.service.TransformationService;
@@ -13,6 +14,7 @@ import com.github.gamekinger1st.imitationcoreapi.api.targeting.MobImitationTarge
 import com.github.gamekinger1st.imitationcoreapi.api.replica.ReplicaEntityTags;
 import com.github.gamekinger1st.imitationcoreapi.internal.config.ImitationCoreConfig;
 import com.github.gamekinger1st.imitationcoreapi.internal.replica.ImitatorReplicaApplicationAdapter;
+import com.github.gamekinger1st.imitationcoreapi.internal.tensura.TensuraEnergyTransitionService;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -22,6 +24,8 @@ import net.minecraft.world.entity.player.Player;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.living.LivingChangeTargetEvent;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
+import net.neoforged.neoforge.event.entity.EntityEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDropsEvent;
@@ -54,6 +58,9 @@ public final class ImitationCoreServerEvents {
         NeoForge.EVENT_BUS.addListener(ImitationCoreServerEvents::onReplicaDeath);
         NeoForge.EVENT_BUS.addListener(ImitationCoreServerEvents::onReplicaDrops);
         NeoForge.EVENT_BUS.addListener(ImitationCoreServerEvents::onReplicaExperience);
+        NeoForge.EVENT_BUS.addListener(ImitationCoreServerEvents::onReplicaEntityJoin);
+        NeoForge.EVENT_BUS.addListener(ImitationCoreServerEvents::onEntitySize);
+        NeoForge.EVENT_BUS.addListener(EventPriority.HIGHEST, ImitationCoreServerEvents::onPlayerPreTick);
         NeoForge.EVENT_BUS.addListener(ImitationCoreServerEvents::onPlayerTick);
         registered = true;
     }
@@ -68,13 +75,17 @@ public final class ImitationCoreServerEvents {
         MinecraftServer server = event.getServer();
         ImitationCoreServices.applications(server).requestReversionForAll(TransformationLifecycleReason.SERVER_STOPPING, server.overworld().getGameTime());
         DiscordChatBridge.stop(server);
+        ImitationApi.imitatorMenuContinuations().clearAll();
         ImitationCoreServices.release(server);
     }
 
     private static void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        serverPlayer(event.getEntity()).ifPresent(player -> DiscordChatBridge.relaySystem(player.serverLevel().getServer(), player.getGameProfile().getName() + " left the game"));
         serverPlayer(event.getEntity()).ifPresent(player -> {
             ImitationCoreNetwork.forgetChatClient(player);
             ImitationCoreServices.chats(player).clearPlayer(player.getUUID());
+            ImitationApi.imitatorMenuContinuations().clear(player.getUUID());
+            ImitationApi.imitatorFormAbilities().clearPlayer(player.getUUID());
         });
         applications(event.getEntity()).ifPresent(service -> {
             java.util.List<SessionTransitionResult> results = service.requestReversionForOwner(serverPlayer(event.getEntity()), event.getEntity().getUUID(), TransformationLifecycleReason.LOGOUT, gameTime(event.getEntity()));
@@ -83,7 +94,10 @@ public final class ImitationCoreServerEvents {
     }
 
     private static void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
-        serverPlayer(event.getEntity()).ifPresent(ImitationCoreNetwork::advertiseChat);
+        serverPlayer(event.getEntity()).ifPresent(player -> {
+            ImitationCoreNetwork.advertiseChat(player);
+            DiscordChatBridge.relaySystem(player.serverLevel().getServer(), player.getGameProfile().getName() + " joined the game");
+        });
         applications(event.getEntity()).ifPresent(service -> {
             service.requestReversionForOwner(serverPlayer(event.getEntity()), event.getEntity().getUUID(), TransformationLifecycleReason.RECONNECT, gameTime(event.getEntity()));
             serverPlayer(event.getEntity()).ifPresent(ImitationCoreServerEvents::syncActiveDisguises);
@@ -106,12 +120,33 @@ public final class ImitationCoreServerEvents {
     }
 
     private static void onStartTracking(PlayerEvent.StartTracking event) {
-        if (!(event.getEntity() instanceof ServerPlayer tracker) || !(event.getTarget() instanceof ServerPlayer subject)) {
+        if (!(event.getEntity() instanceof ServerPlayer tracker)) {
+            return;
+        }
+        if (ReplicaEntityTags.isReplica(event.getTarget())) {
+            ImitationCoreNetwork.syncReplicaVisuals(tracker, event.getTarget());
+        }
+        if (!(event.getTarget() instanceof ServerPlayer subject)) {
             return;
         }
         ImitationCoreServices.forServer(tracker.serverLevel().getServer())
                 .activeSessionForOwner(subject.getUUID())
                 .ifPresent(session -> ImitationCoreNetwork.syncToPlayer(tracker, subject, session));
+    }
+
+    private static void onEntitySize(EntityEvent.Size event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) {
+            return;
+        }
+        net.minecraft.nbt.CompoundTag marker = player.getPersistentData().getCompound("ImitationCoreAPI.ActiveForm");
+        if (!marker.getBoolean("physical_dimensions")) {
+            return;
+        }
+        float width = marker.getFloat("bb_width");
+        float height = marker.getFloat("bb_height");
+        if (Float.isFinite(width) && Float.isFinite(height) && width >= 0.01F && width <= 64F && height >= 0.01F && height <= 64F) {
+            event.setNewSize(net.minecraft.world.entity.EntityDimensions.scalable(width, height));
+        }
     }
 
     private static void onMobChangeTarget(LivingChangeTargetEvent event) {
@@ -141,6 +176,12 @@ public final class ImitationCoreServerEvents {
                 .clearExistingTargets(player, ImitationCoreConfig.mobTargetingReconciliationRange());
     }
 
+    private static void onPlayerPreTick(PlayerTickEvent.Pre event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            TensuraEnergyTransitionService.tick(player);
+        }
+    }
+
     private static void onTransformedPlayerDeath(LivingDeathEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer player)) {
             return;
@@ -154,6 +195,9 @@ public final class ImitationCoreServerEvents {
             }
             syncLifecycleResults(java.util.Optional.of(player), java.util.List.of(result));
         });
+        if (!event.isCanceled()) {
+            DiscordChatBridge.relaySystem(player.serverLevel().getServer(), player.getCombatTracker().getDeathMessage().getString());
+        }
     }
 
     private static void onTransformedPlayerLethalDamage(LivingDamageEvent.Pre event) {
@@ -195,6 +239,34 @@ public final class ImitationCoreServerEvents {
     private static void onReplicaExperience(LivingExperienceDropEvent event) {
         if (ReplicaEntityTags.suppressExperience(event.getEntity())) {
             event.setDroppedExperience(0);
+        }
+    }
+
+    private static void onReplicaEntityJoin(EntityJoinLevelEvent event) {
+        Entity entity = event.getEntity();
+        if (!ReplicaEntityTags.isReplica(entity) || !(event.getLevel() instanceof ServerLevel level)) {
+            return;
+        }
+        MinecraftServer server = level.getServer();
+        java.util.Optional<java.util.UUID> sessionId = ReplicaEntityTags.sessionId(entity);
+        if (sessionId.isEmpty()) {
+            entity.discard();
+            return;
+        }
+        java.util.Optional<TransformationSession> session = ImitationCoreServices.forServer(server).session(sessionId.get());
+        long expires = ReplicaEntityTags.expiresGameTime(entity);
+        if (session.isPresent() && session.get().state().requiresRecovery() && (expires <= 0L || level.getGameTime() < expires)) {
+            return;
+        }
+        ServerPlayer owner = ReplicaEntityTags.ownerId(entity).map(id -> server.getPlayerList().getPlayer(id)).orElse(null);
+        ImitationCoreServices.applications(server).requestReversion(
+                java.util.Optional.ofNullable(owner),
+                sessionId.get(),
+                expires > 0L && level.getGameTime() >= expires ? TransformationLifecycleReason.REPLICA_EXPIRED : TransformationLifecycleReason.REPLICA_REMOVED,
+                level.getGameTime()
+        );
+        if (!entity.isRemoved()) {
+            entity.discard();
         }
     }
 

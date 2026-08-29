@@ -45,6 +45,19 @@ public final class ImitatorFormLibrarySerialization {
             return source;
         });
         MIGRATIONS.register(4, source -> source);
+        MIGRATIONS.register(5, source -> {
+            ListTag forms = source.getList("forms", Tag.TAG_COMPOUND);
+            for (int index = 0; index < forms.size(); index++) {
+                forms.getCompound(index).putBoolean("skill_copy_allowed", true);
+            }
+            if (source.contains("pending_record", Tag.TAG_COMPOUND)) {
+                CompoundTag pending = source.getCompound("pending_record");
+                pending.putBoolean("skill_copy_allowed", true);
+                source.put("pending_record", pending);
+            }
+            source.put("forms", forms);
+            return source;
+        });
     }
 
     private ImitatorFormLibrarySerialization() {
@@ -101,7 +114,11 @@ public final class ImitatorFormLibrarySerialization {
         Optional<ImitatorPendingRecord> pending = tag.contains("pending_record", Tag.TAG_COMPOUND)
                 ? Optional.of(readPending(tag.getCompound("pending_record")))
                 : Optional.empty();
-        List<UUID> seen = tag.getList("seen_snapshots", Tag.TAG_COMPOUND).stream()
+        ListTag seenTags = tag.getList("seen_snapshots", Tag.TAG_COMPOUND);
+        if (seenTags.size() > 4_096) {
+            throw new IllegalArgumentException("Too many seen forms");
+        }
+        List<UUID> seen = seenTags.stream()
                 .map(value -> value instanceof CompoundTag entry ? requireUuid(entry, "snapshot_id") : null)
                 .toList();
         ImitatorSkillMode skillMode = readMode(tag);
@@ -113,6 +130,9 @@ public final class ImitatorFormLibrarySerialization {
     }
 
     private static Map<Integer, ImitatorForm> readForms(ListTag tags) {
+        if (tags.size() > 256) {
+            throw new IllegalArgumentException("Too many form slots");
+        }
         Map<Integer, ImitatorForm> forms = new LinkedHashMap<>();
         for (int index = 0; index < tags.size(); index++) {
             CompoundTag tag = tags.getCompound(index);
@@ -165,7 +185,8 @@ public final class ImitatorFormLibrarySerialization {
 
     private static CompoundTag migrate(CompoundTag source) {
         if (!source.contains("schema", Tag.TAG_INT)) {
-            throw new IllegalArgumentException("Missing form library schema version");
+            source = source.copy();
+            source.putInt("schema", 1);
         }
         int sourceVersion = source.getInt("schema");
         if (sourceVersion < 1 || sourceVersion > ImitatorFormLibraryState.CURRENT_SCHEMA_VERSION) {

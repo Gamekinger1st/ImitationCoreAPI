@@ -6,3 +6,8 @@ build/
 .idea/
 *.iml
 out/
+run/
+logs/
+crash-reports/
+*.log
+hs_err_pid*

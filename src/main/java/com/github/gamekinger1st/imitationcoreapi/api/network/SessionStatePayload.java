@@ -52,7 +52,7 @@ public record SessionStatePayload(
         Objects.requireNonNull(state, "state");
         Objects.requireNonNull(compatibility, "compatibility");
         Objects.requireNonNull(reasons, "reasons");
-        if (revision < 0 || reasons.size() > MAX_REASONS) {
+        if (revision < 0) {
             throw new IllegalArgumentException("Invalid session state payload bounds");
         }
         reasons = reasons.stream()
@@ -60,6 +60,7 @@ public record SessionStatePayload(
                 .map(String::strip)
                 .filter(reason -> !reason.isEmpty())
                 .map(reason -> reason.length() > MAX_REASON_LENGTH ? reason.substring(0, MAX_REASON_LENGTH) : reason)
+                .limit(MAX_REASONS)
                 .toList();
     }
 

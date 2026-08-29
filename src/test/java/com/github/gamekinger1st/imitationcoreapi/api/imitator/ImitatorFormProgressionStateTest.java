@@ -34,10 +34,33 @@ class ImitatorFormProgressionStateTest {
         ImitatorFormProgressionState observed = state.observe(current);
 
         assertEquals(0F, delta.health());
-        assertEquals(5F, delta.maxHealth());
-        assertEquals(1, delta.armorValue());
+        assertEquals(0F, delta.maxHealth());
+        assertEquals(0, delta.armorValue());
         assertEquals(new TensuraVitals(25D, 5D, 20D, 0D), delta.tensuraVitals().orElseThrow());
         assertEquals(delta, observed.accumulatedDelta());
         assertEquals(observed, ImitatorFormProgressionState.fromTag(observed.toTag()));
+    }
+
+    @Test
+    void doesNotTreatOrdinaryHealingAsPermanentFormProgression() {
+        ImitatorFormProgressionState state = ImitatorFormProgressionState.empty(UUID.randomUUID())
+                .observe(new DisguiseAppraisalSnapshot(5F, 20F, 2, Optional.empty()));
+
+        ImitatorFormStatDelta delta = state.lastDelta(new DisguiseAppraisalSnapshot(20F, 20F, 2, Optional.empty()));
+
+        assertTrue(delta.isEmpty());
+    }
+
+    @Test
+    void doesNotRepeatIgnoredTransientChangesEveryTick() {
+        ImitatorFormProgressionState state = ImitatorFormProgressionState.empty(UUID.randomUUID())
+                .observe(new DisguiseAppraisalSnapshot(5F, 20F, 2, Optional.of(new TensuraVitals(100D, 40D, 60D, 5D))));
+        DisguiseAppraisalSnapshot buffed = new DisguiseAppraisalSnapshot(20F, 40F, 20, Optional.of(new TensuraVitals(100D, 40D, 60D, 50D)));
+
+        ImitatorFormProgressionState first = state.observe(buffed);
+        ImitatorFormProgressionState second = first.observe(buffed);
+
+        assertTrue(first.accumulatedDelta().isEmpty());
+        assertTrue(second.accumulatedDelta().isEmpty());
     }
 }

@@ -21,11 +21,15 @@ public final class ImitatorFormAbilities {
     }
 
     public static ImitatorActionResult activate(ServerPlayer player, IdentitySnapshot snapshot, ImitatorSkillCopyPolicy policy, ImitatorSkillCopyAccess access) {
+        return activate(player, snapshot, policy, access, false);
+    }
+
+    public static ImitatorActionResult activate(ServerPlayer player, IdentitySnapshot snapshot, ImitatorSkillCopyPolicy policy, ImitatorSkillCopyAccess access, boolean mastered) {
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(snapshot, "snapshot");
         Objects.requireNonNull(policy, "policy");
         Objects.requireNonNull(access, "access");
-        return registry().activate(player, snapshot, policy, access);
+        return registry().activate(player, snapshot, policy, access, mastered);
     }
 
     public static void tick(ServerPlayer player, IdentitySnapshot snapshot) {
@@ -38,6 +42,10 @@ public final class ImitatorFormAbilities {
     }
 
     public static void tick(ServerPlayer player, IdentitySnapshot snapshot, ImitatorSkillCopyPolicy policy, ImitatorSkillCopyAccess access) {
+        tick(player, snapshot, policy, access, false);
+    }
+
+    public static void tick(ServerPlayer player, IdentitySnapshot snapshot, ImitatorSkillCopyPolicy policy, ImitatorSkillCopyAccess access, boolean mastered) {
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(snapshot, "snapshot");
         Objects.requireNonNull(policy, "policy");
@@ -45,6 +53,6 @@ public final class ImitatorFormAbilities {
         if (player.isSpectator()) {
             return;
         }
-        registry().tick(player, snapshot, policy, access);
+        registry().tick(player, snapshot, policy, access, mastered);
     }
 }

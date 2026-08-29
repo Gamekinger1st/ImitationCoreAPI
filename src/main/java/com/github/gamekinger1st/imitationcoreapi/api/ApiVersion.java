@@ -1,7 +1,7 @@
 package com.github.gamekinger1st.imitationcoreapi.api;
 
 public record ApiVersion(int major, int minor, int patch) implements Comparable<ApiVersion> {
-    public static final ApiVersion CURRENT = new ApiVersion(0, 1, 0);
+    public static final ApiVersion CURRENT = new ApiVersion(0, 5, 0);
 
     public ApiVersion {
         if (major < 0 || minor < 0 || patch < 0) {

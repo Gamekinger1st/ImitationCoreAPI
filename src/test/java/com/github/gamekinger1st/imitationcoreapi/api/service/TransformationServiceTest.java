@@ -1,6 +1,7 @@
 package com.github.gamekinger1st.imitationcoreapi.api.service;
 
 import com.github.gamekinger1st.imitationcoreapi.api.compat.CompatibilityAssessment;
+import com.github.gamekinger1st.imitationcoreapi.api.session.TemporaryStateKinds;
 import com.github.gamekinger1st.imitationcoreapi.api.session.TemporaryStateReference;
 import com.github.gamekinger1st.imitationcoreapi.api.session.TemporaryStateStatus;
 import com.github.gamekinger1st.imitationcoreapi.api.session.TransformationLifecycleReason;
@@ -44,7 +45,7 @@ class TransformationServiceTest {
         TemporaryStateReference reference = new TemporaryStateReference(
                 UUID.randomUUID(),
                 session.sessionId(),
-                ResourceLocation.withDefaultNamespace("temporary_item"),
+                TemporaryStateKinds.EFFECT,
                 new CompoundTag(),
                 TemporaryStateStatus.ACTIVE
         );
@@ -81,7 +82,7 @@ class TransformationServiceTest {
         TemporaryStateReference reference = new TemporaryStateReference(
                 UUID.randomUUID(),
                 session.sessionId(),
-                ResourceLocation.withDefaultNamespace("temporary_item"),
+                TemporaryStateKinds.EFFECT,
                 new CompoundTag(),
                 TemporaryStateStatus.ACTIVE
         );
@@ -107,7 +108,7 @@ class TransformationServiceTest {
         TransformationSession session = service.beginSession(UUID.randomUUID(), snapshot.snapshotId(), BaselineSnapshot.empty(), CompatibilityAssessment.full(), 10L).session().orElseThrow();
         CompoundTag payload = new CompoundTag();
         payload.putString("value", "old");
-        TemporaryStateReference reference = new TemporaryStateReference(UUID.randomUUID(), session.sessionId(), ResourceLocation.withDefaultNamespace("temporary_item"), payload, TemporaryStateStatus.ACTIVE);
+        TemporaryStateReference reference = new TemporaryStateReference(UUID.randomUUID(), session.sessionId(), TemporaryStateKinds.EFFECT, payload, TemporaryStateStatus.ACTIVE);
         session = service.addTemporaryState(session.sessionId(), reference, 11L).session().orElseThrow();
         CompoundTag updatedPayload = new CompoundTag();
         updatedPayload.putString("value", "new");

@@ -14,6 +14,10 @@ public interface TensuraStateBridge {
 
     Optional<TensuraStateSnapshot> capture(LivingEntity entity);
 
+    default Optional<TensuraVitals> captureVitals(LivingEntity entity) {
+        return capture(entity).map(TensuraStateSnapshot::vitals);
+    }
+
     TensuraStateOperationResult restore(LivingEntity entity, TensuraStateSnapshot snapshot);
 
     default TensuraStateOperationResult restoreScaled(LivingEntity entity, TensuraStateSnapshot snapshot, double scale) {

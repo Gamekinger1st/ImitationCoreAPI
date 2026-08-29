@@ -18,7 +18,7 @@ public record ImitatorFormLibraryState(
         ImitatorSkillMode skillMode,
         boolean mirrorSyncEnabled
 ) {
-    public static final int CURRENT_SCHEMA_VERSION = 5;
+    public static final int CURRENT_SCHEMA_VERSION = 6;
 
     public ImitatorFormLibraryState {
         if (schemaVersion < 1 || schemaVersion > CURRENT_SCHEMA_VERSION) {

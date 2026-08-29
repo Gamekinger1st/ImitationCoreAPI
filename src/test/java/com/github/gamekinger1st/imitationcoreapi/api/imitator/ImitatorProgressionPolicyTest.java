@@ -16,7 +16,7 @@ class ImitatorProgressionPolicyTest {
         assertEquals(policy.maximumInitialPrecision(), policy.initialPrecision(ImitatorRecordingContext.DEFAULT));
         assertEquals(policy.minimumPrecision(), policy.initialPrecision(new ImitatorRecordingContext(1D, 1D, 0D, 0D, false)));
         assertEquals(policy.maximumInitialPrecision(), policy.initialPrecision(new ImitatorRecordingContext(0D, 0D, 1D, 1D, true)));
-        assertFalse(policy.initialForm(UUID.randomUUID(), ImitatorRecordingContext.DEFAULT).skillCopyAllowed());
+        assertTrue(policy.initialForm(UUID.randomUUID(), ImitatorRecordingContext.DEFAULT).skillCopyAllowed());
         assertTrue(policy.initialForm(UUID.randomUUID(), new ImitatorRecordingContext(0D, 0D, 1D, 0D, true)).skillCopyAllowed());
     }
 

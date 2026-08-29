@@ -50,9 +50,15 @@ public record SnapshotLimits(
     }
 
     private void validateExtensions(java.util.List<SnapshotExtension> extensions) {
+        long totalBytes = 0L;
         for (SnapshotExtension extension : extensions) {
-            if (extension.payload().sizeInBytes() > maxExtensionDataBytes) {
+            long bytes = extension.payload().sizeInBytes();
+            if (bytes > maxExtensionDataBytes) {
                 throw new IllegalArgumentException("Snapshot extension exceeds the configured data limit");
+            }
+            totalBytes += bytes;
+            if (totalBytes > maxEntityDataBytes) {
+                throw new IllegalArgumentException("Snapshot extensions exceed the configured aggregate data limit");
             }
         }
     }

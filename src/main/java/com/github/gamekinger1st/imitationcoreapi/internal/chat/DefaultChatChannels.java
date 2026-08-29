@@ -5,6 +5,7 @@ import com.github.gamekinger1st.imitationcoreapi.api.chat.ChatChannelProvider;
 import com.github.gamekinger1st.imitationcoreapi.api.chat.ChatChannelRequest;
 import com.github.gamekinger1st.imitationcoreapi.api.chat.ChatChannels;
 import com.github.gamekinger1st.imitationcoreapi.api.chat.ChatDelivery;
+import com.github.gamekinger1st.imitationcoreapi.internal.config.ImitationCoreConfig;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -37,8 +38,6 @@ public final class DefaultChatChannels {
     }
 
     private static final class Local implements ChatChannelProvider {
-        private static final double RANGE_SQUARED = 128.0D * 128.0D;
-
         @Override
         public ResourceLocation id() {
             return ChatChannels.LOCAL;
@@ -51,9 +50,11 @@ public final class DefaultChatChannels {
 
         @Override
         public Optional<ChatDelivery> route(ChatChannelRequest request) {
+            double range = ImitationCoreConfig.localChatRange();
+            double rangeSquared = range * range;
             return Optional.of(new ChatDelivery(kind(), request.sender().server.getPlayerList().getPlayers().stream()
                     .filter(player -> player.level() == request.sender().level())
-                    .filter(player -> player.distanceToSqr(request.sender()) <= RANGE_SQUARED)
+                    .filter(player -> player.distanceToSqr(request.sender()) <= rangeSquared)
                     .toList()));
         }
     }

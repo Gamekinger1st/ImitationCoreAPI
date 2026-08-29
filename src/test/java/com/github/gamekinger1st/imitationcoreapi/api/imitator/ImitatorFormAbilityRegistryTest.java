@@ -48,6 +48,7 @@ class ImitatorFormAbilityRegistryTest {
                 .maximumCopiedSkills(1)
                 .masteryMultiplier(1D)
                 .temporaryRemoveTime(Integer.MAX_VALUE)
+                .allowUltimateSkills(true)
                 .build();
 
         assertEquals(List.of(ultimate, standard), registry.activeAbilities(snapshot(ENTITY), policy, ImitatorSkillCopyAccess.SUPERIOR_EP).stream().map(ImitatorFormAbility::id).toList());

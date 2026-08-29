@@ -21,4 +21,8 @@ public interface GeckoAnimationBridge {
     boolean trigger(Entity entity, String controllerName, String animationName);
 
     boolean stop(Entity entity, String controllerName, String animationName);
+
+    default Optional<Boolean> isPlaying(Entity entity, String controllerName, String animationName) {
+        return Optional.empty();
+    }
 }

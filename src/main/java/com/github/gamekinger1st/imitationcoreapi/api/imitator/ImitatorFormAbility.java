@@ -23,6 +23,10 @@ public interface ImitatorFormAbility {
         return ImitatorActionResult.rejected("The copied form has no active form ability");
     }
 
+    default int cooldownTicks(IdentitySnapshot snapshot) {
+        return 0;
+    }
+
     default boolean hasTickAbility(IdentitySnapshot snapshot) {
         return false;
     }

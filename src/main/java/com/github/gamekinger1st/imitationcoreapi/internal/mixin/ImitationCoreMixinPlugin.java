@@ -18,7 +18,6 @@ public final class ImitationCoreMixinPlugin implements IMixinConfigPlugin {
     private static final String LIVING_ENTITY = "net/minecraft/world/entity/LivingEntity";
     private static final String ENTITY_TYPE = "net/minecraft/world/entity/EntityType";
     private static final String TARGETING_HOOKS = "com/github/gamekinger1st/imitationcoreapi/internal/targeting/ActiveFormTargetingHooks";
-    private static final String SUBORDINATE_TARGET_DESCRIPTOR = "(Lnet/minecraft/world/entity/Mob;Lnet/minecraft/world/entity/LivingEntity;Ljava/util/function/Predicate;)Z";
     private static final Set<String> OPTIONAL_TARGETS = Set.of(
             TENSURA_OVERLAY,
             TENSURA_BEHAVIOUR_HELPER,
@@ -63,17 +62,13 @@ public final class ImitationCoreMixinPlugin implements IMixinConfigPlugin {
     }
 
     private static boolean classPresent(String className) {
-        try {
-            Class.forName(className, false, ImitationCoreMixinPlugin.class.getClassLoader());
-            return true;
-        } catch (ClassNotFoundException | LinkageError exception) {
-            return false;
-        }
+        String resourceName = className.replace('.', '/') + ".class";
+        return ImitationCoreMixinPlugin.class.getClassLoader().getResource(resourceName) != null;
     }
 
     private static void replaceSubordinateTypeLookups(ClassNode targetClass) {
         for (MethodNode method : targetClass.methods) {
-            if (!method.name.equals("shouldTarget") || !method.desc.equals(SUBORDINATE_TARGET_DESCRIPTOR)) {
+            if (!method.name.equals("shouldTarget") && !method.name.equals("shouldStopTarget")) {
                 continue;
             }
             for (var instruction = method.instructions.getFirst(); instruction != null; instruction = instruction.getNext()) {

@@ -71,7 +71,7 @@ public final class DefaultImitationCoreServiceProvider implements ImitationCoreS
     public ChatService chats(MinecraftServer server) {
         Objects.requireNonNull(server, "server");
         synchronized (chats) {
-            return chats.computeIfAbsent(server, value -> new ChatService(value, ImitationCoreSavedData.get(value), new ChatRateLimiter(), Clock.systemUTC(), ImitationCoreConfig::defaultChatChannel, ImitationCoreNetwork::deliverChat));
+            return chats.computeIfAbsent(server, value -> new ChatService(value, ImitationCoreSavedData.get(value), new ChatRateLimiter(ImitationCoreConfig.chatRateLimit(), ImitationCoreConfig.chatRateWindowMillis()), Clock.systemUTC(), ImitationCoreConfig::defaultChatChannel, ImitationCoreNetwork::deliverChat));
         }
     }
 

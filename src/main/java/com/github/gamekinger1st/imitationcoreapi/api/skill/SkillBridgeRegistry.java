@@ -86,12 +86,33 @@ public final class SkillBridgeRegistry {
     public SkillOperationResult restore(LivingEntity entity, SkillSnapshot snapshot) {
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(snapshot, "snapshot");
-        return orderedBridges().stream()
-                .filter(SkillBridge::isAvailable)
-                .filter(bridge -> bridge.id().equals(snapshot.bridgeId()))
-                .findFirst()
-                .map(bridge -> invoke(() -> bridge.restore(entity, snapshot)))
-                .orElseGet(() -> SkillOperationResult.failure("No compatible skill bridge is loaded for this snapshot"));
+        for (SkillBridge bridge : orderedBridges()) {
+            try {
+                if (bridge.id().equals(snapshot.bridgeId()) && bridge.isAvailable()) {
+                    return invoke(() -> bridge.restore(entity, snapshot));
+                }
+            } catch (RuntimeException | LinkageError exception) {
+            }
+        }
+        return SkillOperationResult.failure("No compatible skill bridge is loaded for this snapshot");
+    }
+
+    public SkillOperationResult restoreSkill(LivingEntity entity, ResourceLocation bridgeId, SkillState state) {
+        Objects.requireNonNull(entity, "entity");
+        Objects.requireNonNull(bridgeId, "bridgeId");
+        Objects.requireNonNull(state, "state");
+        return bridge(bridgeId)
+                .map(bridge -> invoke(() -> bridge.restoreSkill(entity, state)))
+                .orElseGet(() -> SkillOperationResult.failure("The requested skill bridge is not available"));
+    }
+
+    public SkillOperationResult removeSkill(LivingEntity entity, ResourceLocation bridgeId, ResourceLocation skillId) {
+        Objects.requireNonNull(entity, "entity");
+        Objects.requireNonNull(bridgeId, "bridgeId");
+        Objects.requireNonNull(skillId, "skillId");
+        return bridge(bridgeId)
+                .map(bridge -> invoke(() -> bridge.removeSkill(entity, skillId)))
+                .orElseGet(() -> SkillOperationResult.failure("The requested skill bridge is not available"));
     }
 
     public SkillOperationResult grantTemporary(LivingEntity entity, ResourceLocation skillId, int removeTime, TemporarySkillOwnership ownership) {
@@ -162,7 +183,20 @@ public final class SkillBridgeRegistry {
     }
 
     private synchronized java.util.List<SkillBridge> orderedBridges() {
-        return bridges.values().stream().sorted(Comparator.comparingInt(SkillBridge::priority).reversed().thenComparing(bridge -> bridge.id().toString())).toList();
+        return bridges.entrySet().stream()
+                .sorted(Comparator.<Map.Entry<ResourceLocation, SkillBridge>>comparingInt(entry -> priority(entry.getValue()))
+                        .reversed()
+                        .thenComparing(entry -> entry.getKey().toString()))
+                .map(Map.Entry::getValue)
+                .toList();
+    }
+
+    private static int priority(SkillBridge bridge) {
+        try {
+            return bridge.priority();
+        } catch (RuntimeException | LinkageError exception) {
+            return Integer.MIN_VALUE;
+        }
     }
 
     private synchronized boolean unregister(ResourceLocation id, SkillBridge bridge) {

@@ -17,12 +17,18 @@ import java.lang.reflect.Method;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 public final class ReflectiveTensuraStateBridge implements TensuraStateBridge {
     private static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("imitationcoreapi", "tensura_state_reflective");
     private static final String TENSURA_STORAGES = "io.github.manasmods.tensura.storage.TensuraStorages";
     private static final String ENERGY_HELPER = "io.github.manasmods.tensura.util.EnergyHelper";
     private static final String RACE_API = "io.github.manasmods.manascore.race.api.RaceAPI";
+    private static final Set<String> FORM_EXISTENCE_KEYS = Set.of(
+            "spiritualHealth", "aura", "magicule", "demonLordSeed", "trueDemonLord", "heroEgg", "trueHero",
+            "blessed", "nameable", "spiritualForm", "originalAlignment", "alignment"
+    );
+    private static final Set<String> FORM_SPIRIT_KEYS = Set.of("spiritList");
 
     @Override
     public ResourceLocation id() {
@@ -52,13 +58,21 @@ public final class ReflectiveTensuraStateBridge implements TensuraStateBridge {
             Object existence = tensuraStorage(entity, "getExistenceFrom");
             Map<ResourceLocation, CompoundTag> sections = new LinkedHashMap<>();
             sections.put(TensuraStateSections.RACE, save(raceStorage(entity)));
-            sections.put(TensuraStateSections.EXISTENCE, save(existence));
+            sections.put(TensuraStateSections.EXISTENCE, sanitizeExistenceSection(save(existence)));
             sections.put(TensuraStateSections.ABILITIES, save(tensuraStorage(entity, "getAbilityFrom")));
-            saveOptional(tensuraStorage(entity, "getPlayerDataFrom")).ifPresent(data -> sections.put(TensuraStateSections.PLAYER, data));
-            sections.put(TensuraStateSections.SPIRIT, save(tensuraStorage(entity, "getSpiritFrom")));
+            sections.put(TensuraStateSections.SPIRIT, sanitizeSpiritSection(save(tensuraStorage(entity, "getSpiritFrom"))));
             captureAttributesSafely(entity).ifPresent(attributes -> sections.put(TensuraStateSections.ATTRIBUTES, attributes));
             TensuraVitals vitals = captureVitals(entity, existence);
             return Optional.of(new TensuraStateSnapshot(ID, TensuraStateSnapshot.CURRENT_SCHEMA_VERSION, vitals, sections));
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException exception) {
+            return Optional.empty();
+        }
+    }
+
+    @Override
+    public Optional<TensuraVitals> captureVitals(LivingEntity entity) {
+        try {
+            return Optional.of(captureVitals(entity, tensuraStorage(entity, "getExistenceFrom")));
         } catch (ReflectiveOperationException | LinkageError | RuntimeException exception) {
             return Optional.empty();
         }
@@ -72,11 +86,11 @@ public final class ReflectiveTensuraStateBridge implements TensuraStateBridge {
         try {
             Map<ResourceLocation, CompoundTag> sections = snapshot.sections();
             restore(raceStorage(entity), sections.get(TensuraStateSections.RACE));
-            restore(tensuraStorage(entity, "getExistenceFrom"), sections.get(TensuraStateSections.EXISTENCE));
+            restoreMerged(tensuraStorage(entity, "getExistenceFrom"), sanitizeExistenceSection(sections.get(TensuraStateSections.EXISTENCE)));
             restore(tensuraStorage(entity, "getAbilityFrom"), sections.get(TensuraStateSections.ABILITIES));
-            restore(tensuraStorage(entity, "getPlayerDataFrom"), sections.get(TensuraStateSections.PLAYER));
-            restore(tensuraStorage(entity, "getSpiritFrom"), sections.get(TensuraStateSections.SPIRIT));
+            restoreMerged(tensuraStorage(entity, "getSpiritFrom"), sanitizeSpiritSection(sections.get(TensuraStateSections.SPIRIT)));
             restoreAttributes(entity, sections.get(TensuraStateSections.ATTRIBUTES));
+            restoreVitalLimits(entity, snapshot.vitals());
             return TensuraStateOperationResult.success();
         } catch (ReflectiveOperationException | LinkageError | RuntimeException exception) {
             return TensuraStateOperationResult.failure(exception.getClass().getSimpleName());
@@ -176,10 +190,6 @@ public final class ReflectiveTensuraStateBridge implements TensuraStateBridge {
         return tag;
     }
 
-    private Optional<CompoundTag> saveOptional(Object storage) throws ReflectiveOperationException {
-        return storage == null ? Optional.empty() : Optional.of(save(storage));
-    }
-
     private void restore(Object storage, CompoundTag data) throws ReflectiveOperationException {
         if (data == null) {
             return;
@@ -188,13 +198,46 @@ public final class ReflectiveTensuraStateBridge implements TensuraStateBridge {
         method(storage.getClass(), "markDirty", 0).invoke(storage);
     }
 
+    private void restoreMerged(Object storage, CompoundTag data) throws ReflectiveOperationException {
+        if (data == null) {
+            return;
+        }
+        CompoundTag merged = save(storage);
+        for (String key : data.getAllKeys()) {
+            Tag value = data.get(key);
+            if (value != null) {
+                merged.put(key, value.copy());
+            }
+        }
+        restore(storage, merged);
+    }
+
     private Optional<CompoundTag> captureAttributes(LivingEntity entity) throws ReflectiveOperationException {
         Object values = method(entity.getAttributes().getClass(), "save", 0).invoke(entity.getAttributes());
         if (!(values instanceof ListTag attributes)) {
             return Optional.empty();
         }
+        ListTag stableValues = new ListTag();
+        for (int index = 0; index < attributes.size(); index++) {
+            CompoundTag source = attributes.getCompound(index);
+            if (!source.contains("id", Tag.TAG_STRING) || !source.contains("base", Tag.TAG_DOUBLE)) {
+                continue;
+            }
+            CompoundTag value = new CompoundTag();
+            value.putString("id", source.getString("id"));
+            value.putDouble("base", source.getDouble("base"));
+            ResourceLocation id = ResourceLocation.tryParse(source.getString("id"));
+            double effective = id == null
+                    ? source.getDouble("base")
+                    : BuiltInRegistries.ATTRIBUTE.getHolder(id)
+                            .map(entity::getAttribute)
+                            .map(AttributeInstance::getValue)
+                            .orElse(source.getDouble("base"));
+            value.putDouble("value", effective);
+            stableValues.add(value);
+        }
         CompoundTag tag = new CompoundTag();
-        tag.put("values", attributes.copy());
+        tag.put("values", stableValues);
         return Optional.of(tag);
     }
 
@@ -209,9 +252,9 @@ public final class ReflectiveTensuraStateBridge implements TensuraStateBridge {
     private TensuraVitals captureVitals(LivingEntity entity, Object existence) throws ReflectiveOperationException {
         double currentMagicule = number(existence, "getMagicule");
         double currentAura = number(existence, "getAura");
-        double maxMagicule = energyNumber(entity, "getMaxMagicule", currentMagicule);
-        double maxAura = energyNumber(entity, "getMaxAura", currentAura);
-        double maxEp = energyNumber(entity, "getMaxEP", maxMagicule + maxAura);
+        double maxMagicule = energyNumber(entity, "getBaseMaxMagicule", currentMagicule);
+        double maxAura = energyNumber(entity, "getBaseMaxAura", currentAura);
+        double maxEp = energyNumber(entity, "getBaseMaxEP", maxMagicule + maxAura);
         return new TensuraVitals(maxEp, maxMagicule, maxAura, number(existence, "getSpiritualHealth"));
     }
 
@@ -219,9 +262,28 @@ public final class ReflectiveTensuraStateBridge implements TensuraStateBridge {
         if (data == null || !data.contains("values", Tag.TAG_LIST)) {
             return;
         }
-        clearAttributeModifiers(entity);
         ListTag attributes = data.getList("values", Tag.TAG_COMPOUND);
-        method(entity.getAttributes().getClass(), "load", 1).invoke(entity.getAttributes(), attributes);
+        for (int index = 0; index < attributes.size(); index++) {
+            CompoundTag attribute = attributes.getCompound(index);
+            ResourceLocation id = ResourceLocation.tryParse(attribute.getString("id"));
+            if (id == null || !attribute.contains("base", Tag.TAG_DOUBLE)) {
+                continue;
+            }
+            BuiltInRegistries.ATTRIBUTE.getHolder(id)
+                    .map(entity::getAttribute)
+                    .ifPresent(instance -> instance.setBaseValue(attribute.contains("value", Tag.TAG_DOUBLE) ? attribute.getDouble("value") : attribute.getDouble("base")));
+        }
+    }
+
+    private void restoreVitalLimits(LivingEntity entity, TensuraVitals vitals) throws ReflectiveOperationException {
+        setMaxEnergy(entity, "setMaxMagicule", vitals.magicule());
+        setMaxEnergy(entity, "setMaxAura", vitals.aura());
+        Object existence = tensuraStorage(entity, "getExistenceFrom");
+        double currentMagicule = Math.max(0D, Math.min(number(existence, "getMagicule"), vitals.magicule()));
+        double currentAura = Math.max(0D, Math.min(number(existence, "getAura"), vitals.aura()));
+        method(existence.getClass(), "setMagicule", 1).invoke(existence, currentMagicule);
+        method(existence.getClass(), "setAura", 1).invoke(existence, currentAura);
+        method(existence.getClass(), "markDirty", 0).invoke(existence);
     }
 
     private TensuraStateSnapshot scaled(TensuraStateSnapshot snapshot, double scale) {
@@ -236,6 +298,9 @@ public final class ReflectiveTensuraStateBridge implements TensuraStateBridge {
             for (int index = 0; index < values.size(); index++) {
                 CompoundTag attribute = values.getCompound(index);
                 attribute.putDouble("base", attribute.getDouble("base") * scale);
+                if (attribute.contains("value", Tag.TAG_DOUBLE)) {
+                    attribute.putDouble("value", attribute.getDouble("value") * scale);
+                }
                 if (attribute.contains("modifiers", Tag.TAG_LIST)) {
                     ListTag modifiers = attribute.getList("modifiers", Tag.TAG_COMPOUND);
                     for (int modifierIndex = 0; modifierIndex < modifiers.size(); modifierIndex++) {
@@ -247,33 +312,6 @@ public final class ReflectiveTensuraStateBridge implements TensuraStateBridge {
             sections.put(TensuraStateSections.ATTRIBUTES, scaled);
         }
         return new TensuraStateSnapshot(snapshot.bridgeId(), snapshot.schemaVersion(), scaledVitals(snapshot.vitals(), scale), sections);
-    }
-
-    private void clearAttributeModifiers(LivingEntity entity) {
-        ListTag attributes = entity.getAttributes().save();
-        for (int index = 0; index < attributes.size(); index++) {
-            CompoundTag attribute = attributes.getCompound(index);
-            ResourceLocation id = ResourceLocation.tryParse(attribute.getString("id"));
-            if (id == null) {
-                continue;
-            }
-            BuiltInRegistries.ATTRIBUTE.getHolder(id)
-                    .map(entity::getAttribute)
-                    .ifPresent(instance -> removePermanentModifiers(instance, attribute));
-        }
-    }
-
-    private void removePermanentModifiers(AttributeInstance instance, CompoundTag attribute) {
-        if (!attribute.contains("modifiers", Tag.TAG_LIST)) {
-            return;
-        }
-        ListTag modifiers = attribute.getList("modifiers", Tag.TAG_COMPOUND);
-        for (int index = 0; index < modifiers.size(); index++) {
-            ResourceLocation id = ResourceLocation.tryParse(modifiers.getCompound(index).getString("id"));
-            if (id != null) {
-                instance.removeModifier(id);
-            }
-        }
     }
 
     private double number(Object target, String methodName) throws ReflectiveOperationException {
@@ -308,5 +346,27 @@ public final class ReflectiveTensuraStateBridge implements TensuraStateBridge {
                 .filter(method -> method.getName().equals(name) && method.getParameterCount() == parameterCount)
                 .findFirst()
                 .orElseThrow(NoSuchMethodException::new);
+    }
+
+    static CompoundTag sanitizeExistenceSection(CompoundTag source) {
+        return retainedKeys(source, FORM_EXISTENCE_KEYS);
+    }
+
+    static CompoundTag sanitizeSpiritSection(CompoundTag source) {
+        return retainedKeys(source, FORM_SPIRIT_KEYS);
+    }
+
+    private static CompoundTag retainedKeys(CompoundTag source, Set<String> retainedKeys) {
+        if (source == null) {
+            return null;
+        }
+        CompoundTag retained = new CompoundTag();
+        for (String key : retainedKeys) {
+            Tag value = source.get(key);
+            if (value != null) {
+                retained.put(key, value.copy());
+            }
+        }
+        return retained;
     }
 }

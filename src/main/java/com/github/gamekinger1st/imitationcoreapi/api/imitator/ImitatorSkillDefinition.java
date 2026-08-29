@@ -19,34 +19,39 @@ public record ImitatorSkillDefinition(
         ImitatorSkillCopyPolicy skillCopyPolicy,
         ImitatorReplicaPolicy replicaPolicy,
         ImitatorTransformDurationPolicy transformDurationPolicy,
-        ImitatorFormLibraryLimits formLibraryLimits
+        ImitatorFormLibraryLimits formLibraryLimits,
+        ImitatorTransformationModifiers transformationModifiers
 ) {
     public static ImitatorSkillDefinitionBuilder builder(ResourceLocation skillId, String displayName, String description) {
         return new ImitatorSkillDefinitionBuilder(skillId, displayName, description);
     }
 
     public ImitatorSkillDefinition(ResourceLocation skillId, String displayName, String description, long learningCost, long masteryRequirement, long maximumMastery, Map<ImitatorSkillMode, ImitatorSkillCost> modeCosts) {
-        this(skillId, displayName, description, learningCost, masteryRequirement, maximumMastery, modeCosts, ImitatorProgressionPolicy.DEFAULT, ImitatorMirrorSyncPolicy.DEFAULT, ImitatorSkillCopyPolicy.DISABLED, ImitatorReplicaPolicy.DEFAULT, ImitatorTransformDurationPolicy.unlimited(), ImitatorFormLibraryLimits.DEFAULT);
+        this(skillId, displayName, description, learningCost, masteryRequirement, maximumMastery, modeCosts, ImitatorProgressionPolicy.DEFAULT, ImitatorMirrorSyncPolicy.DEFAULT, ImitatorSkillCopyPolicy.DISABLED, ImitatorReplicaPolicy.DEFAULT, ImitatorTransformDurationPolicy.unlimited(), ImitatorFormLibraryLimits.DEFAULT, ImitatorTransformationModifiers.DEFAULT);
     }
 
     public ImitatorSkillDefinition(ResourceLocation skillId, String displayName, String description, long learningCost, long masteryRequirement, long maximumMastery, Map<ImitatorSkillMode, ImitatorSkillCost> modeCosts, ImitatorProgressionPolicy progressionPolicy) {
-        this(skillId, displayName, description, learningCost, masteryRequirement, maximumMastery, modeCosts, progressionPolicy, ImitatorMirrorSyncPolicy.DEFAULT, ImitatorSkillCopyPolicy.DISABLED, ImitatorReplicaPolicy.DEFAULT, ImitatorTransformDurationPolicy.unlimited(), ImitatorFormLibraryLimits.DEFAULT);
+        this(skillId, displayName, description, learningCost, masteryRequirement, maximumMastery, modeCosts, progressionPolicy, ImitatorMirrorSyncPolicy.DEFAULT, ImitatorSkillCopyPolicy.DISABLED, ImitatorReplicaPolicy.DEFAULT, ImitatorTransformDurationPolicy.unlimited(), ImitatorFormLibraryLimits.DEFAULT, ImitatorTransformationModifiers.DEFAULT);
     }
 
     public ImitatorSkillDefinition(ResourceLocation skillId, String displayName, String description, long learningCost, long masteryRequirement, long maximumMastery, Map<ImitatorSkillMode, ImitatorSkillCost> modeCosts, ImitatorProgressionPolicy progressionPolicy, ImitatorMirrorSyncPolicy mirrorSyncPolicy) {
-        this(skillId, displayName, description, learningCost, masteryRequirement, maximumMastery, modeCosts, progressionPolicy, mirrorSyncPolicy, ImitatorSkillCopyPolicy.DISABLED, ImitatorReplicaPolicy.DEFAULT, ImitatorTransformDurationPolicy.unlimited(), ImitatorFormLibraryLimits.DEFAULT);
+        this(skillId, displayName, description, learningCost, masteryRequirement, maximumMastery, modeCosts, progressionPolicy, mirrorSyncPolicy, ImitatorSkillCopyPolicy.DISABLED, ImitatorReplicaPolicy.DEFAULT, ImitatorTransformDurationPolicy.unlimited(), ImitatorFormLibraryLimits.DEFAULT, ImitatorTransformationModifiers.DEFAULT);
     }
 
     public ImitatorSkillDefinition(ResourceLocation skillId, String displayName, String description, long learningCost, long masteryRequirement, long maximumMastery, Map<ImitatorSkillMode, ImitatorSkillCost> modeCosts, ImitatorProgressionPolicy progressionPolicy, ImitatorMirrorSyncPolicy mirrorSyncPolicy, ImitatorSkillCopyPolicy skillCopyPolicy) {
-        this(skillId, displayName, description, learningCost, masteryRequirement, maximumMastery, modeCosts, progressionPolicy, mirrorSyncPolicy, skillCopyPolicy, ImitatorReplicaPolicy.DEFAULT, ImitatorTransformDurationPolicy.unlimited(), ImitatorFormLibraryLimits.DEFAULT);
+        this(skillId, displayName, description, learningCost, masteryRequirement, maximumMastery, modeCosts, progressionPolicy, mirrorSyncPolicy, skillCopyPolicy, ImitatorReplicaPolicy.DEFAULT, ImitatorTransformDurationPolicy.unlimited(), ImitatorFormLibraryLimits.DEFAULT, ImitatorTransformationModifiers.DEFAULT);
     }
 
     public ImitatorSkillDefinition(ResourceLocation skillId, String displayName, String description, long learningCost, long masteryRequirement, long maximumMastery, Map<ImitatorSkillMode, ImitatorSkillCost> modeCosts, ImitatorProgressionPolicy progressionPolicy, ImitatorMirrorSyncPolicy mirrorSyncPolicy, ImitatorSkillCopyPolicy skillCopyPolicy, ImitatorReplicaPolicy replicaPolicy) {
-        this(skillId, displayName, description, learningCost, masteryRequirement, maximumMastery, modeCosts, progressionPolicy, mirrorSyncPolicy, skillCopyPolicy, replicaPolicy, ImitatorTransformDurationPolicy.unlimited(), ImitatorFormLibraryLimits.DEFAULT);
+        this(skillId, displayName, description, learningCost, masteryRequirement, maximumMastery, modeCosts, progressionPolicy, mirrorSyncPolicy, skillCopyPolicy, replicaPolicy, ImitatorTransformDurationPolicy.unlimited(), ImitatorFormLibraryLimits.DEFAULT, ImitatorTransformationModifiers.DEFAULT);
     }
 
     public ImitatorSkillDefinition(ResourceLocation skillId, String displayName, String description, long learningCost, long masteryRequirement, long maximumMastery, Map<ImitatorSkillMode, ImitatorSkillCost> modeCosts, ImitatorProgressionPolicy progressionPolicy, ImitatorMirrorSyncPolicy mirrorSyncPolicy, ImitatorSkillCopyPolicy skillCopyPolicy, ImitatorReplicaPolicy replicaPolicy, ImitatorTransformDurationPolicy transformDurationPolicy) {
-        this(skillId, displayName, description, learningCost, masteryRequirement, maximumMastery, modeCosts, progressionPolicy, mirrorSyncPolicy, skillCopyPolicy, replicaPolicy, transformDurationPolicy, ImitatorFormLibraryLimits.DEFAULT);
+        this(skillId, displayName, description, learningCost, masteryRequirement, maximumMastery, modeCosts, progressionPolicy, mirrorSyncPolicy, skillCopyPolicy, replicaPolicy, transformDurationPolicy, ImitatorFormLibraryLimits.DEFAULT, ImitatorTransformationModifiers.DEFAULT);
+    }
+
+    public ImitatorSkillDefinition(ResourceLocation skillId, String displayName, String description, long learningCost, long masteryRequirement, long maximumMastery, Map<ImitatorSkillMode, ImitatorSkillCost> modeCosts, ImitatorProgressionPolicy progressionPolicy, ImitatorMirrorSyncPolicy mirrorSyncPolicy, ImitatorSkillCopyPolicy skillCopyPolicy, ImitatorReplicaPolicy replicaPolicy, ImitatorTransformDurationPolicy transformDurationPolicy, ImitatorFormLibraryLimits formLibraryLimits) {
+        this(skillId, displayName, description, learningCost, masteryRequirement, maximumMastery, modeCosts, progressionPolicy, mirrorSyncPolicy, skillCopyPolicy, replicaPolicy, transformDurationPolicy, formLibraryLimits, ImitatorTransformationModifiers.DEFAULT);
     }
 
     public ImitatorSkillDefinition {
@@ -60,6 +65,7 @@ public record ImitatorSkillDefinition(
         Objects.requireNonNull(replicaPolicy, "replicaPolicy");
         Objects.requireNonNull(transformDurationPolicy, "transformDurationPolicy");
         Objects.requireNonNull(formLibraryLimits, "formLibraryLimits");
+        Objects.requireNonNull(transformationModifiers, "transformationModifiers");
         displayName = displayName.strip();
         description = description.strip();
         if (displayName.isEmpty() || displayName.length() > 128 || description.length() > 1_024) {

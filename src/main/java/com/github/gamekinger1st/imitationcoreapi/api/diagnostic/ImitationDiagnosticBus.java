@@ -1,5 +1,7 @@
 package com.github.gamekinger1st.imitationcoreapi.api.diagnostic;
 
+import com.github.gamekinger1st.imitationcoreapi.ImitationCoreApi;
+
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -16,7 +18,11 @@ public final class ImitationDiagnosticBus {
     public void post(ImitationDiagnostic diagnostic) {
         Objects.requireNonNull(diagnostic, "diagnostic");
         for (ImitationDiagnosticListener listener : listeners) {
-            listener.onImitationDiagnostic(diagnostic);
+            try {
+                listener.onImitationDiagnostic(diagnostic);
+            } catch (RuntimeException | LinkageError exception) {
+                ImitationCoreApi.LOGGER.error("An imitation diagnostic listener failed", exception);
+            }
         }
     }
 }

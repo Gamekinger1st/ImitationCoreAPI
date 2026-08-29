@@ -17,6 +17,9 @@ import java.util.Properties;
 
 record DiscordBridgeConfig(Optional<URI> webhookUri, Optional<String> botToken, Optional<String> channelId, int pollIntervalSeconds, boolean relayLocalMessages, boolean relayDirectMessages, boolean relaySystemMessages) {
     static final String FILE_NAME = "imitationcoreapi-discord.properties";
+    static final String WEBHOOK_ENVIRONMENT = "IMITATIONCOREAPI_DISCORD_WEBHOOK_URL";
+    static final String BOT_TOKEN_ENVIRONMENT = "IMITATIONCOREAPI_DISCORD_BOT_TOKEN";
+    static final String CHANNEL_ID_ENVIRONMENT = "IMITATIONCOREAPI_DISCORD_CHANNEL_ID";
     private static final String DEFAULT_CONTENT = """
             webhook_url=
             bot_token=
@@ -56,9 +59,9 @@ record DiscordBridgeConfig(Optional<URI> webhookUri, Optional<String> botToken, 
             return defaults();
         }
         return new DiscordBridgeConfig(
-                webhookUri(value(properties, "webhook_url")),
-                value(properties, "bot_token"),
-                value(properties, "channel_id").filter(DiscordBridgeConfig::isSnowflake),
+                webhookUri(secret(properties, "webhook_url", WEBHOOK_ENVIRONMENT)),
+                secret(properties, "bot_token", BOT_TOKEN_ENVIRONMENT),
+                secret(properties, "channel_id", CHANNEL_ID_ENVIRONMENT).filter(DiscordBridgeConfig::isSnowflake),
                 integer(properties, "poll_interval_seconds", 3),
                 bool(properties, "relay_local_messages", false),
                 bool(properties, "relay_direct_messages", false),
@@ -88,6 +91,17 @@ record DiscordBridgeConfig(Optional<URI> webhookUri, Optional<String> botToken, 
 
     private static Optional<String> value(Properties properties, String key) {
         return Optional.ofNullable(properties.getProperty(key)).map(String::strip).filter(configured -> !configured.isEmpty());
+    }
+
+    private static Optional<String> secret(Properties properties, String key, String environmentKey) {
+        try {
+            Optional<String> environmentValue = Optional.ofNullable(System.getenv(environmentKey)).map(String::strip).filter(configured -> !configured.isEmpty());
+            if (environmentValue.isPresent()) {
+                return environmentValue;
+            }
+        } catch (SecurityException ignored) {
+        }
+        return value(properties, key);
     }
 
     private static int integer(Properties properties, String key, int fallback) {

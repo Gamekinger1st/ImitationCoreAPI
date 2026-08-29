@@ -3,6 +3,7 @@ package com.github.gamekinger1st.imitationcoreapi.api.chat;
 import com.github.gamekinger1st.imitationcoreapi.api.network.ChatProtocolPayload;
 
 import java.util.Optional;
+import net.minecraft.resources.ResourceLocation;
 import java.util.concurrent.atomic.AtomicReference;
 
 public final class ClientChatProtocolState {
@@ -14,6 +15,10 @@ public final class ClientChatProtocolState {
 
     public boolean replacementEnabled() {
         return protocol().map(value -> value.protocolVersion() == ChatProtocolPayload.CURRENT_PROTOCOL_VERSION).orElse(false);
+    }
+
+    public ResourceLocation activeChannel() {
+        return protocol().map(ChatProtocolPayload::activeChannel).orElse(ChatChannels.GLOBAL);
     }
 
     public void accept(ChatProtocolPayload payload) {

@@ -1,5 +1,7 @@
 package com.github.gamekinger1st.imitationcoreapi.api.network;
 
+import com.github.gamekinger1st.imitationcoreapi.ImitationCoreApi;
+
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -16,7 +18,11 @@ public final class ImitatorFormLibraryBus {
     public void post(ImitatorFormLibraryPayload payload) {
         Objects.requireNonNull(payload, "payload");
         for (ImitatorFormLibraryListener listener : listeners) {
-            listener.onFormLibrary(payload);
+            try {
+                listener.onFormLibrary(payload);
+            } catch (RuntimeException | LinkageError exception) {
+                ImitationCoreApi.LOGGER.error("An imitation form library listener failed", exception);
+            }
         }
     }
 }

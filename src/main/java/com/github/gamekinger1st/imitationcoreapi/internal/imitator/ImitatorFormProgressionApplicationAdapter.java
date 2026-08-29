@@ -12,6 +12,7 @@ import com.github.gamekinger1st.imitationcoreapi.api.session.TemporaryStateRefer
 import com.github.gamekinger1st.imitationcoreapi.api.session.TransformationScope;
 import com.github.gamekinger1st.imitationcoreapi.api.tensura.TensuraStateOperationResult;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.registries.BuiltInRegistries;
 
 import java.util.List;
 import java.util.Optional;
@@ -62,6 +63,13 @@ public final class ImitatorFormProgressionApplicationAdapter implements Transfor
                 if (!result.successful()) {
                     throw new IllegalStateException(result.detail());
                 }
+            });
+            state.accumulatedDelta().attributeBaseValues().forEach((id, delta) -> {
+                if (id.equals(ResourceLocation.fromNamespaceAndPath("tensura", "max_magicule"))
+                        || id.equals(ResourceLocation.fromNamespaceAndPath("tensura", "max_aura"))) {
+                    return;
+                }
+                BuiltInRegistries.ATTRIBUTE.getHolder(id).map(owner::getAttribute).ifPresent(instance -> instance.setBaseValue(instance.getBaseValue() + delta));
             });
         }
     }

@@ -20,7 +20,7 @@ import com.github.gamekinger1st.imitationcoreapi.internal.disguise.DisguiseAppra
 import com.github.gamekinger1st.imitationcoreapi.internal.targeting.TagBackedMobFactionResolver;
 import com.github.gamekinger1st.imitationcoreapi.internal.targeting.VanillaMobFactionResolver;
 import com.github.gamekinger1st.imitationcoreapi.internal.client.ClientDisguiseLifecycle;
-import com.github.gamekinger1st.imitationcoreapi.internal.imitator.ImitatorPersonaChatProvider;
+import com.github.gamekinger1st.imitationcoreapi.internal.client.ImitationCoreClientKeys;
 import com.github.gamekinger1st.imitationcoreapi.internal.imitator.CoreImitatorIntegration;
 import com.github.gamekinger1st.imitationcoreapi.internal.imitator.DefaultImitatorFormAbilities;
 import com.github.gamekinger1st.imitationcoreapi.internal.imitator.ImitatorFormProgressionApplicationAdapter;
@@ -49,6 +49,7 @@ public final class ImitationCoreApi {
 
     public ImitationCoreApi(IEventBus modEventBus, ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.SERVER, ImitationCoreConfig.SPEC);
+        modContainer.registerConfig(ModConfig.Type.CLIENT, ImitationCoreConfig.CLIENT_SPEC);
         ImitationCoreServices.initialize(new DefaultImitationCoreServiceProvider());
         ImitationCoreServerEvents.register();
         PersonaChatServer.register();
@@ -76,8 +77,8 @@ public final class ImitationCoreApi {
         ImitationApi.disguisePresentations().register(new DefaultDisguisePresentationAdapter());
         if (FMLEnvironment.dist.isClient()) {
             ClientDisguiseLifecycle.register();
+            ImitationCoreClientKeys.register(modEventBus);
         }
-        ImitationApi.personaChats().register(new ImitatorPersonaChatProvider());
         ImitationApi.imitatorIntegrations().register(new CoreImitatorIntegration());
         DefaultImitatorFormAbilities.create().forEach(ImitationApi.imitatorFormAbilities()::register);
         DefaultChatChannels.create().forEach(ImitationApi.chatChannels()::register);

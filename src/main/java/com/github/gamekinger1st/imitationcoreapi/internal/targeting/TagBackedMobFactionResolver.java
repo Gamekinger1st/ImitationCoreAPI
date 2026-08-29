@@ -29,7 +29,7 @@ public final class TagBackedMobFactionResolver implements MobFactionResolver {
 
     @Override
     public int priority() {
-        return -100;
+        return 100;
     }
 
     @Override

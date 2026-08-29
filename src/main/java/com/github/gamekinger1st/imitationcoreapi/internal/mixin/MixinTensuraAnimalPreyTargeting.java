@@ -1,18 +1,21 @@
 package com.github.gamekinger1st.imitationcoreapi.internal.mixin;
 
 import com.github.gamekinger1st.imitationcoreapi.internal.targeting.ActiveFormTargetingHooks;
-import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+import java.util.function.Predicate;
 
 @Pseudo
 @Mixin(targets = "io.github.manasmods.tensura.entity.ai.behaviour.TensuraBehaviourHelper", remap = false)
 public abstract class MixinTensuraAnimalPreyTargeting {
-    @Redirect(method = "lambda$getAnimalPreyPredicate$15", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/LivingEntity;getType()Lnet/minecraft/world/entity/EntityType;"))
-    private static EntityType<?> imitationcoreapi$effectiveTargetType(LivingEntity entity) {
-        return ActiveFormTargetingHooks.effectiveType(entity);
+    @Inject(method = "getAnimalPreyPredicate", at = @At("RETURN"), cancellable = true, remap = false)
+    private static void imitationcoreapi$wrapAnimalPreyPredicate(LivingEntity subordinate, CallbackInfoReturnable<Predicate<LivingEntity>> callback) {
+        Predicate<LivingEntity> original = callback.getReturnValue();
+        callback.setReturnValue(target -> ActiveFormTargetingHooks.animalPreyDecision(subordinate, target).orElseGet(() -> original.test(target)));
     }
 }

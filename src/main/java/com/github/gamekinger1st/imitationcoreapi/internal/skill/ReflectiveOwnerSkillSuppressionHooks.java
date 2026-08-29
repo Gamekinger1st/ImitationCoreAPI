@@ -23,12 +23,24 @@ public final class ReflectiveOwnerSkillSuppressionHooks {
         }
         Optional<ResourceLocation> skillId = skillId(skillInstance);
         if (skillId.isEmpty()) {
-            return true;
+            return !isSuppressing(player);
         }
         try {
             OwnerSkillUseDecision decision = ImitationCoreServices.ownerSkillSuppressions(player).evaluate(player, skillId.get(), temporaryOwnership(skillInstance));
             return decision.allowed();
         } catch (RuntimeException | LinkageError exception) {
+            return !isSuppressing(player);
+        }
+    }
+
+    public static boolean canUseChangeable(Object changeable, Object skillInstance) {
+        if (changeable == null) {
+            return true;
+        }
+        try {
+            Object value = method(changeable.getClass(), "get", 0).invoke(changeable);
+            return !(value instanceof LivingEntity entity) || canUse(entity, skillInstance);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError exception) {
             return true;
         }
     }
@@ -63,5 +75,13 @@ public final class ReflectiveOwnerSkillSuppressionHooks {
                 .filter(method -> method.getName().equals(name) && method.getParameterCount() == parameters)
                 .findFirst()
                 .orElseThrow(NoSuchMethodException::new);
+    }
+
+    private static boolean isSuppressing(ServerPlayer player) {
+        try {
+            return ImitationCoreServices.ownerSkillSuppressions(player).isSuppressing(player);
+        } catch (RuntimeException | LinkageError exception) {
+            return true;
+        }
     }
 }

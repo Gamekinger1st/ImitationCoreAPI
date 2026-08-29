@@ -7,6 +7,9 @@ import com.github.gamekinger1st.imitationcoreapi.api.disguise.DisguiseAppraisalE
 import com.github.gamekinger1st.imitationcoreapi.api.disguise.DisguiseAppraisalSnapshot;
 import com.github.gamekinger1st.imitationcoreapi.api.disguise.PlayerDisguiseProfile;
 import com.github.gamekinger1st.imitationcoreapi.api.disguise.PlayerDisguiseProfileExtensions;
+import com.github.gamekinger1st.imitationcoreapi.api.imitator.ImitatorAutoJumpOverride;
+import com.github.gamekinger1st.imitationcoreapi.api.imitator.ImitatorTransformationModifierState;
+import com.github.gamekinger1st.imitationcoreapi.api.imitator.ImitatorTransformationModifiers;
 import com.github.gamekinger1st.imitationcoreapi.api.session.TransformationSession;
 import com.github.gamekinger1st.imitationcoreapi.api.session.TransformationScope;
 import com.github.gamekinger1st.imitationcoreapi.api.snapshot.IdentitySnapshot;
@@ -33,10 +36,11 @@ public record ActiveDisguisePayload(
         CompatibilityLevel compatibility,
         long revision,
         Optional<PlayerDisguiseProfile> playerProfile,
-        Optional<DisguiseAppraisalSnapshot> appraisal
+        Optional<DisguiseAppraisalSnapshot> appraisal,
+        ImitatorTransformationModifiers transformationModifiers
 ) implements CustomPacketPayload {
-    public static final int MAX_ENTITY_DATA_BYTES = 65_536;
-    public static final int MAX_VISUAL_DATA_BYTES = 32_768;
+    public static final int MAX_ENTITY_DATA_BYTES = com.github.gamekinger1st.imitationcoreapi.api.snapshot.SnapshotLimits.DEFAULT.maxEntityDataBytes();
+    public static final int MAX_VISUAL_DATA_BYTES = com.github.gamekinger1st.imitationcoreapi.api.snapshot.SnapshotLimits.DEFAULT.maxVisualDataBytes();
     public static final int MAX_DISPLAY_NAME_LENGTH = 256;
     public static final Type<ActiveDisguisePayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(ImitationCoreApi.MOD_ID, "active_disguise"));
     public static final StreamCodec<RegistryFriendlyByteBuf, ActiveDisguisePayload> STREAM_CODEC = StreamCodec.of(ActiveDisguisePayload::encode, ActiveDisguisePayload::decode);
@@ -54,7 +58,7 @@ public record ActiveDisguisePayload(
             CompatibilityLevel compatibility,
             long revision
     ) {
-        this(entityId, ownerId, sessionId, snapshotId, scope, entityType, displayName, entityData, visualData, compatibility, revision, Optional.empty(), Optional.empty());
+        this(entityId, ownerId, sessionId, snapshotId, scope, entityType, displayName, entityData, visualData, compatibility, revision, Optional.empty(), Optional.empty(), ImitatorTransformationModifiers.DEFAULT);
     }
 
     public ActiveDisguisePayload(
@@ -71,7 +75,7 @@ public record ActiveDisguisePayload(
             long revision,
             Optional<PlayerDisguiseProfile> playerProfile
     ) {
-        this(entityId, ownerId, sessionId, snapshotId, scope, entityType, displayName, entityData, visualData, compatibility, revision, playerProfile, Optional.empty());
+        this(entityId, ownerId, sessionId, snapshotId, scope, entityType, displayName, entityData, visualData, compatibility, revision, playerProfile, Optional.empty(), ImitatorTransformationModifiers.DEFAULT);
     }
 
     public ActiveDisguisePayload(
@@ -86,7 +90,25 @@ public record ActiveDisguisePayload(
             CompatibilityLevel compatibility,
             long revision
     ) {
-        this(entityId, ownerId, sessionId, snapshotId, TransformationScope.GAMEPLAY, entityType, displayName, entityData, visualData, compatibility, revision, Optional.empty(), Optional.empty());
+        this(entityId, ownerId, sessionId, snapshotId, TransformationScope.GAMEPLAY, entityType, displayName, entityData, visualData, compatibility, revision, Optional.empty(), Optional.empty(), ImitatorTransformationModifiers.DEFAULT);
+    }
+
+    public ActiveDisguisePayload(
+            int entityId,
+            UUID ownerId,
+            UUID sessionId,
+            UUID snapshotId,
+            TransformationScope scope,
+            ResourceLocation entityType,
+            String displayName,
+            CompoundTag entityData,
+            CompoundTag visualData,
+            CompatibilityLevel compatibility,
+            long revision,
+            Optional<PlayerDisguiseProfile> playerProfile,
+            Optional<DisguiseAppraisalSnapshot> appraisal
+    ) {
+        this(entityId, ownerId, sessionId, snapshotId, scope, entityType, displayName, entityData, visualData, compatibility, revision, playerProfile, appraisal, ImitatorTransformationModifiers.DEFAULT);
     }
 
     public ActiveDisguisePayload {
@@ -104,6 +126,7 @@ public record ActiveDisguisePayload(
         Objects.requireNonNull(compatibility, "compatibility");
         Objects.requireNonNull(playerProfile, "playerProfile");
         Objects.requireNonNull(appraisal, "appraisal");
+        Objects.requireNonNull(transformationModifiers, "transformationModifiers");
         displayName = displayName.strip();
         if (displayName.length() > MAX_DISPLAY_NAME_LENGTH) {
             throw new IllegalArgumentException("Disguise display name exceeds the configured limit");
@@ -133,12 +156,13 @@ public record ActiveDisguisePayload(
                 session.compatibility().level(),
                 session.revision(),
                 PlayerDisguiseProfileExtensions.find(snapshot.extensions()),
-                DisguiseAppraisalExtensions.find(snapshot.extensions())
+                DisguiseAppraisalExtensions.find(snapshot.extensions()),
+                ImitatorTransformationModifierState.find(session)
         );
     }
 
     public ClientDisguiseState toState() {
-        return new ClientDisguiseState(entityId, ownerId, sessionId, snapshotId, scope, entityType, displayName, entityData, visualData, compatibility, revision, playerProfile, appraisal);
+        return new ClientDisguiseState(entityId, ownerId, sessionId, snapshotId, scope, entityType, displayName, entityData, visualData, compatibility, revision, playerProfile, appraisal, transformationModifiers);
     }
 
     @Override
@@ -167,6 +191,7 @@ public record ActiveDisguisePayload(
         payload.playerProfile.ifPresent(profile -> writePlayerProfile(buffer, profile));
         buffer.writeBoolean(payload.appraisal.isPresent());
         payload.appraisal.ifPresent(snapshot -> writeAppraisal(buffer, snapshot));
+        buffer.writeVarInt(payload.transformationModifiers.autoJumpOverride().ordinal());
     }
 
     private static ActiveDisguisePayload decode(RegistryFriendlyByteBuf buffer) {
@@ -187,7 +212,8 @@ public record ActiveDisguisePayload(
         long revision = buffer.readVarLong();
         Optional<PlayerDisguiseProfile> playerProfile = buffer.readBoolean() ? Optional.of(readPlayerProfile(buffer)) : Optional.empty();
         Optional<DisguiseAppraisalSnapshot> appraisal = buffer.readBoolean() ? Optional.of(readAppraisal(buffer)) : Optional.empty();
-        return new ActiveDisguisePayload(entityId, ownerId, sessionId, snapshotId, scope, entityType, displayName, entityData, visualData, levels[compatibilityIndex], revision, playerProfile, appraisal);
+        ImitatorAutoJumpOverride autoJumpOverride = enumAt(ImitatorAutoJumpOverride.values(), buffer.readVarInt(), "auto-jump override");
+        return new ActiveDisguisePayload(entityId, ownerId, sessionId, snapshotId, scope, entityType, displayName, entityData, visualData, levels[compatibilityIndex], revision, playerProfile, appraisal, new ImitatorTransformationModifiers(autoJumpOverride));
     }
 
     private static <T> T enumAt(T[] values, int index, String name) {
@@ -198,7 +224,10 @@ public record ActiveDisguisePayload(
     }
 
     private static CompoundTag bounded(CompoundTag data, int limit) {
-        return data.sizeInBytes() <= limit ? data : new CompoundTag();
+        if (data.sizeInBytes() > limit) {
+            throw new IllegalArgumentException("Disguise data exceeds the synchronized payload limit");
+        }
+        return data;
     }
 
     private static void writePlayerProfile(RegistryFriendlyByteBuf buffer, PlayerDisguiseProfile profile) {

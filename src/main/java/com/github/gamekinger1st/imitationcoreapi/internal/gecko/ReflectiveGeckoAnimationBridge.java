@@ -92,6 +92,25 @@ public final class ReflectiveGeckoAnimationBridge implements GeckoAnimationBridg
         return invoke(entity, "stopTriggeredAnim", controllerName, animationName);
     }
 
+    @Override
+    public Optional<Boolean> isPlaying(Entity entity, String controllerName, String animationName) {
+        if (!supports(entity)) {
+            return Optional.empty();
+        }
+        return animationControllers(entity)
+                .flatMap(controllers -> controllerByName(controllers, controllerName))
+                .flatMap(controller -> {
+                    boolean playing = booleanValue(invokeNoArg(controller, "isPlayingTriggeredAnimation").orElse(null)).orElse(false);
+                    if (!playing) {
+                        return Optional.of(false);
+                    }
+                    Optional<String> activeName = invokeNoArg(controller, "getTriggeredAnimation")
+                            .or(() -> readField(controller, "triggeredAnimation"))
+                            .flatMap(raw -> triggerableNameFor(controller, raw));
+                    return Optional.of(activeName.map(animationName::equals).orElse(true));
+                });
+    }
+
     private boolean invoke(Entity entity, String methodName, String controllerName, String animationName) {
         try {
             if (!supports(entity)) {

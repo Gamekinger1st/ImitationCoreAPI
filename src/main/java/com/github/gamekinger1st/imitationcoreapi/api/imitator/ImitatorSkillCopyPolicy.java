@@ -76,6 +76,10 @@ public record ImitatorSkillCopyPolicy(
     }
 
     public List<ImitatorCopiedSkill> select(ImitatorSkillCopySnapshot snapshot, ResourceLocation imitatorSkillId, Function<ResourceLocation, SkillClassification> classificationResolver, ImitatorSkillCopyAccess access) {
+        return select(snapshot, imitatorSkillId, classificationResolver, access, false);
+    }
+
+    public List<ImitatorCopiedSkill> select(ImitatorSkillCopySnapshot snapshot, ResourceLocation imitatorSkillId, Function<ResourceLocation, SkillClassification> classificationResolver, ImitatorSkillCopyAccess access, boolean mastered) {
         Objects.requireNonNull(snapshot, "snapshot");
         Objects.requireNonNull(imitatorSkillId, "imitatorSkillId");
         Objects.requireNonNull(classificationResolver, "classificationResolver");
@@ -87,7 +91,7 @@ public record ImitatorSkillCopyPolicy(
                 .filter(skill -> skill.mastery() >= minimumSourceMastery)
                 .filter(skill -> !skill.skillId().equals(imitatorSkillId))
                 .filter(skill -> !deniedSkills.contains(skill.skillId()))
-                .filter(skill -> allows(Objects.requireNonNullElse(classificationResolver.apply(skill.skillId()), SkillClassification.UNKNOWN), access))
+                .filter(skill -> allows(Objects.requireNonNullElse(classificationResolver.apply(skill.skillId()), SkillClassification.UNKNOWN), access, mastered))
                 .sorted(Comparator.comparingDouble(ImitatorCopiedSkill::mastery).reversed().thenComparing(skill -> skill.skillId().toString()))
                 .limit(maximumCopiedSkills)
                 .map(skill -> new ImitatorCopiedSkill(skill.skillId(), skill.mastery() * masteryMultiplier))
@@ -104,19 +108,26 @@ public record ImitatorSkillCopyPolicy(
     }
 
     public boolean allows(SkillClassification classification, ImitatorSkillCopyAccess access) {
+        return allows(classification, access, false);
+    }
+
+    public boolean allows(SkillClassification classification, ImitatorSkillCopyAccess access, boolean mastered) {
         Objects.requireNonNull(classification, "classification");
-        return switch (Objects.requireNonNull(access, "access")) {
-            case POLICY -> allows(classification);
-            case SUPERIOR_EP -> classification == SkillClassification.UNKNOWN ? allowUnclassifiedSkills : true;
-            case INFERIOR_OR_EQUAL_EP -> switch (classification) {
-                case ULTIMATE, INTRINSIC -> false;
-                case UNKNOWN -> allowUnclassifiedSkills;
-                default -> true;
-            };
+        Objects.requireNonNull(access, "access");
+        return switch (classification) {
+            case STANDARD, RESISTANCE, COMMON, EXTRA -> true;
+            case INTRINSIC -> access == ImitatorSkillCopyAccess.POLICY || access == ImitatorSkillCopyAccess.SUPERIOR_EP;
+            case UNIQUE -> allowUniqueSkills && (access == ImitatorSkillCopyAccess.POLICY || mastered);
+            case ULTIMATE -> allowUltimateSkills && (access == ImitatorSkillCopyAccess.POLICY || access == ImitatorSkillCopyAccess.SUPERIOR_EP);
+            case UNKNOWN -> allowUnclassifiedSkills;
         };
     }
 
     public boolean allows(ImitatorFormAbility ability, IdentitySnapshot snapshot, ImitatorSkillCopyAccess access) {
+        return allows(ability, snapshot, access, false);
+    }
+
+    public boolean allows(ImitatorFormAbility ability, IdentitySnapshot snapshot, ImitatorSkillCopyAccess access, boolean mastered) {
         Objects.requireNonNull(ability, "ability");
         Objects.requireNonNull(snapshot, "snapshot");
         SkillClassification classification;
@@ -125,7 +136,7 @@ public record ImitatorSkillCopyPolicy(
         } catch (RuntimeException | LinkageError exception) {
             classification = SkillClassification.UNKNOWN;
         }
-        return allows(classification, access);
+        return allows(classification, access, mastered);
     }
 
     public CompoundTag toTag() {

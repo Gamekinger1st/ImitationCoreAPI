@@ -3,6 +3,8 @@ package com.github.gamekinger1st.imitationcoreapi.api.network;
 import com.github.gamekinger1st.imitationcoreapi.api.compat.CompatibilityLevel;
 import com.github.gamekinger1st.imitationcoreapi.api.disguise.DisguiseAppraisalSnapshot;
 import com.github.gamekinger1st.imitationcoreapi.api.disguise.PlayerDisguiseProfile;
+import com.github.gamekinger1st.imitationcoreapi.api.imitator.ImitatorAutoJumpOverride;
+import com.github.gamekinger1st.imitationcoreapi.api.imitator.ImitatorTransformationModifiers;
 import com.github.gamekinger1st.imitationcoreapi.api.session.TransformationScope;
 import com.github.gamekinger1st.imitationcoreapi.api.tensura.TensuraVitals;
 import net.minecraft.nbt.CompoundTag;
@@ -40,7 +42,8 @@ class ActiveDisguisePayloadTest {
                 CompatibilityLevel.VISUAL,
                 0L,
                 Optional.of(profile),
-                Optional.of(appraisal)
+                Optional.of(appraisal),
+                ImitatorTransformationModifiers.forceAutoJump(true)
         );
         entityData.putString("name", "Changed");
 
@@ -49,6 +52,7 @@ class ActiveDisguisePayloadTest {
         assertEquals(TransformationScope.SURFACE, payload.toState().scope());
         assertEquals(Optional.of(profile), payload.toState().playerProfile());
         assertEquals(Optional.of(appraisal), payload.toState().appraisal());
+        assertEquals(ImitatorAutoJumpOverride.FORCE_ENABLED, payload.toState().transformationModifiers().autoJumpOverride());
     }
 
     @Test

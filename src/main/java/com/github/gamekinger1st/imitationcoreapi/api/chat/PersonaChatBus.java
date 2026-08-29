@@ -1,5 +1,7 @@
 package com.github.gamekinger1st.imitationcoreapi.api.chat;
 
+import com.github.gamekinger1st.imitationcoreapi.ImitationCoreApi;
+
 import com.github.gamekinger1st.imitationcoreapi.api.network.PersonaChatPayload;
 
 import java.util.List;
@@ -18,7 +20,11 @@ public final class PersonaChatBus {
     public void post(PersonaChatPayload payload) {
         Objects.requireNonNull(payload, "payload");
         for (PersonaChatListener listener : listeners) {
-            listener.onPersonaChat(payload);
+            try {
+                listener.onPersonaChat(payload);
+            } catch (RuntimeException | LinkageError exception) {
+                ImitationCoreApi.LOGGER.error("An imitation persona chat listener failed", exception);
+            }
         }
     }
 }

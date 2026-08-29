@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Objects;
 
 public record CompatibilityAssessment(CompatibilityLevel level, List<String> reasons) {
+    public static final int MAX_REASONS = 32;
+
     public CompatibilityAssessment {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(reasons, "reasons");
@@ -13,6 +15,7 @@ public record CompatibilityAssessment(CompatibilityLevel level, List<String> rea
                 .map(String::strip)
                 .filter(reason -> !reason.isEmpty())
                 .map(reason -> reason.length() > 512 ? reason.substring(0, 512) : reason)
+                .limit(MAX_REASONS)
                 .toList();
     }
 

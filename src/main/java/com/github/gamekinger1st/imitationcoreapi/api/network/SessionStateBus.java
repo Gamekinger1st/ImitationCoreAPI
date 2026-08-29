@@ -1,5 +1,7 @@
 package com.github.gamekinger1st.imitationcoreapi.api.network;
 
+import com.github.gamekinger1st.imitationcoreapi.ImitationCoreApi;
+
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -16,7 +18,11 @@ public final class SessionStateBus {
     public void post(SessionStatePayload payload) {
         Objects.requireNonNull(payload, "payload");
         for (SessionStateListener listener : listeners) {
-            listener.onSessionState(payload);
+            try {
+                listener.onSessionState(payload);
+            } catch (RuntimeException | LinkageError exception) {
+                ImitationCoreApi.LOGGER.error("An imitation session state listener failed", exception);
+            }
         }
     }
 }

@@ -48,6 +48,13 @@ class OwnerSkillSuppressionServiceTest {
     }
 
     @Test
+    void allowsAnAlreadyOwnedSkillWhenTheCopiedFormAlsoProvidesIt() {
+        TransformationSession session = session(List.of(suppressionMarker(IMITATOR, COPIED_SKILL)));
+
+        assertTrue(OwnerSkillSuppressionService.evaluate(session, COPIED_SKILL, Optional.empty()).allowed());
+    }
+
+    @Test
     void allowsCopiedTemporarySkillsOwnedByTheActiveSession() {
         UUID referenceId = UUID.randomUUID();
         TransformationSession session = session(List.of(suppressionMarker(), borrowedSkill(referenceId)));
@@ -85,9 +92,13 @@ class OwnerSkillSuppressionServiceTest {
     }
 
     private static TemporaryStateReference suppressionMarker() {
+        return suppressionMarker(IMITATOR);
+    }
+
+    private static TemporaryStateReference suppressionMarker(ResourceLocation... controllerSkills) {
         CompoundTag payload = new CompoundTag();
         ListTag skills = new ListTag();
-        skills.add(StringTag.valueOf(IMITATOR.toString()));
+        java.util.Arrays.stream(controllerSkills).map(ResourceLocation::toString).map(StringTag::valueOf).forEach(skills::add);
         payload.put(OwnerSkillSuppressionService.CONTROLLER_SKILLS_KEY, skills);
         return new TemporaryStateReference(UUID.randomUUID(), UUID.randomUUID(), OwnerSkillSuppressionService.HANDLER_ID, TemporaryStateKinds.OWNER_SKILL_SUPPRESSION, payload, TemporaryStateStatus.ACTIVE);
     }

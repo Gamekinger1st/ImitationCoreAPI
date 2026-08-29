@@ -26,9 +26,11 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class GeckoDisguiseAnimationAdapter implements DisguiseAnimationAdapter {
     private static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath(ImitationCoreApi.MOD_ID, "geckolib_disguise_animation");
     private static final int MAX_TRACKED_SESSIONS = 512;
-    private static final int ONE_SHOT_HOLD_TICKS = 24;
+    private static final int ONE_SHOT_FALLBACK_TICKS = 60;
+    private static final int ONE_SHOT_STARTUP_GRACE_TICKS = 4;
     private final Map<UUID, Map<String, String>> activeTriggeredAnimations = new ConcurrentHashMap<>();
     private final Map<UUID, Map<String, Integer>> activeTriggerHoldTicks = new ConcurrentHashMap<>();
+    private final Map<UUID, Map<String, Integer>> activeTriggerStartTicks = new ConcurrentHashMap<>();
     private final Map<UUID, Map<String, Integer>> lastForcedTriggerTicks = new ConcurrentHashMap<>();
     private final Set<UUID> missingBridgeDiagnostics = ConcurrentHashMap.newKeySet();
 
@@ -58,31 +60,46 @@ public final class GeckoDisguiseAnimationAdapter implements DisguiseAnimationAda
         if (activeTriggeredAnimations.size() > MAX_TRACKED_SESSIONS) {
             activeTriggeredAnimations.clear();
             activeTriggerHoldTicks.clear();
+            activeTriggerStartTicks.clear();
             lastForcedTriggerTicks.clear();
             missingBridgeDiagnostics.clear();
         }
         List<GeckoControllerSnapshot> controllers = controllersFromVisualData(state.visualData());
         Map<String, String> active = activeTriggeredAnimations.computeIfAbsent(state.sessionId(), ignored -> new ConcurrentHashMap<>());
         Map<String, Integer> heldUntil = activeTriggerHoldTicks.computeIfAbsent(state.sessionId(), ignored -> new ConcurrentHashMap<>());
+        Map<String, Integer> startedAt = activeTriggerStartTicks.computeIfAbsent(state.sessionId(), ignored -> new ConcurrentHashMap<>());
         Map<String, Integer> forcedTicks = lastForcedTriggerTicks.computeIfAbsent(state.sessionId(), ignored -> new ConcurrentHashMap<>());
         Set<String> seen = new HashSet<>();
         for (GeckoControllerSnapshot controller : controllers) {
             Optional<String> trigger = triggerName(controller, intent);
+            String controllerName = controller.controllerName();
             if (trigger.isEmpty()) {
-                if (active.containsKey(controller.controllerName()) && heldUntil.getOrDefault(controller.controllerName(), -1) >= subject.tickCount) {
-                    seen.add(controller.controllerName());
+                String playing = active.get(controllerName);
+                if (playing != null && oneShotTrigger(playing)) {
+                    boolean retain = retainOneShot(imitation, controllerName, playing, startedAt.getOrDefault(controllerName, subject.tickCount), heldUntil.getOrDefault(controllerName, -1), subject.tickCount);
+                    if (retain) {
+                        seen.add(controllerName);
+                    }
                 }
                 continue;
             }
-            seen.add(controller.controllerName());
+            String previous = active.get(controllerName);
+            if (shouldRetainOneShot(previous, trigger.get(), heldUntil.getOrDefault(controllerName, -1), subject.tickCount)) {
+                if (retainOneShot(imitation, controllerName, previous, startedAt.getOrDefault(controllerName, subject.tickCount), heldUntil.getOrDefault(controllerName, -1), subject.tickCount)) {
+                    seen.add(controllerName);
+                    continue;
+                }
+            }
+            seen.add(controllerName);
             boolean oneShot = oneShotTrigger(trigger.get());
             if (oneShot) {
-                heldUntil.put(controller.controllerName(), subject.tickCount + ONE_SHOT_HOLD_TICKS);
+                heldUntil.put(controllerName, subject.tickCount + ONE_SHOT_FALLBACK_TICKS);
             }
-            String previous = active.put(controller.controllerName(), trigger.get());
-            boolean force = shouldForceRetrigger(trigger.get(), intent, subject.tickCount, controller.controllerName(), forcedTicks);
+            previous = active.put(controllerName, trigger.get());
+            boolean force = shouldForceRetrigger(trigger.get(), intent, subject.tickCount, controllerName, forcedTicks);
             if (!trigger.get().equals(previous) || force) {
-                if (!ImitationApi.geckoAnimations().trigger(imitation, controller.controllerName(), trigger.get())) {
+                startedAt.put(controllerName, subject.tickCount);
+                if (!ImitationApi.geckoAnimations().trigger(imitation, controllerName, trigger.get())) {
                     diagnoseMissingBridge(state, subject);
                 }
             }
@@ -94,14 +111,34 @@ public final class GeckoDisguiseAnimationAdapter implements DisguiseAnimationAda
                 }
                 active.remove(entry.getKey(), entry.getValue());
                 heldUntil.remove(entry.getKey());
+                startedAt.remove(entry.getKey());
                 forcedTicks.remove(entry.getKey());
             }
         }
         if (active.isEmpty()) {
             activeTriggeredAnimations.remove(state.sessionId(), active);
             activeTriggerHoldTicks.remove(state.sessionId(), heldUntil);
+            activeTriggerStartTicks.remove(state.sessionId(), startedAt);
             lastForcedTriggerTicks.remove(state.sessionId(), forcedTicks);
         }
+    }
+
+    @Override
+    public void clearSession(UUID sessionId) {
+        activeTriggeredAnimations.remove(sessionId);
+        activeTriggerHoldTicks.remove(sessionId);
+        activeTriggerStartTicks.remove(sessionId);
+        lastForcedTriggerTicks.remove(sessionId);
+        missingBridgeDiagnostics.remove(sessionId);
+    }
+
+    @Override
+    public void clearAllSessions() {
+        activeTriggeredAnimations.clear();
+        activeTriggerHoldTicks.clear();
+        activeTriggerStartTicks.clear();
+        lastForcedTriggerTicks.clear();
+        missingBridgeDiagnostics.clear();
     }
 
     private void diagnoseMissingBridge(ClientDisguiseState state, Entity subject) {
@@ -188,6 +225,24 @@ public final class GeckoDisguiseAnimationAdapter implements DisguiseAnimationAda
                 || normalized.contains("eat")
                 || normalized.contains("drink")
                 || normalized.contains("cast");
+    }
+
+    static boolean shouldRetainOneShot(String activeTrigger, String requestedTrigger, int heldUntilTick, int currentTick) {
+        return activeTrigger != null
+                && oneShotTrigger(activeTrigger)
+                && !oneShotTrigger(requestedTrigger)
+                && heldUntilTick >= currentTick;
+    }
+
+    private static boolean retainOneShot(Entity imitation, String controllerName, String trigger, int startedAtTick, int heldUntilTick, int currentTick) {
+        Optional<Boolean> playing = ImitationApi.geckoAnimations().isPlaying(imitation, controllerName, trigger);
+        if (playing.orElse(false)) {
+            return true;
+        }
+        if (playing.isEmpty()) {
+            return heldUntilTick >= currentTick;
+        }
+        return currentTick - startedAtTick <= ONE_SHOT_STARTUP_GRACE_TICKS;
     }
 
     private List<GeckoControllerSnapshot> controllersFromVisualData(CompoundTag visualData) {

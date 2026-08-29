@@ -70,7 +70,7 @@ public record ImitatorProgressionPolicy(
     public ImitatorForm initialForm(UUID snapshotId, ImitatorRecordingContext context) {
         Objects.requireNonNull(snapshotId, "snapshotId");
         context = Objects.requireNonNull(context, "context");
-        return form(snapshotId, initialPrecision(context), context.mastered());
+        return form(snapshotId, initialPrecision(context), true);
     }
 
     public double initialPrecision(ImitatorRecordingContext context) {

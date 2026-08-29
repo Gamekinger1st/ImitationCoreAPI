@@ -1,5 +1,6 @@
 package com.github.gamekinger1st.imitationcoreapi.api.chat;
 
+import com.github.gamekinger1st.imitationcoreapi.ImitationCoreApi;
 import com.github.gamekinger1st.imitationcoreapi.api.ImitationApi;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -124,10 +125,16 @@ public final class ChatService {
     }
 
     private boolean isSelectable(ResourceLocation channelId) {
-        return ImitationApi.chatChannels().provider(channelId)
-                .filter(ChatChannelProvider::acceptsPlayerMessages)
-                .filter(ChatChannelProvider::supportsActiveSelection)
-                .isPresent();
+        Optional<ChatChannelProvider> provider = ImitationApi.chatChannels().provider(channelId);
+        if (provider.isEmpty()) {
+            return false;
+        }
+        try {
+            return provider.get().acceptsPlayerMessages() && provider.get().supportsActiveSelection();
+        } catch (RuntimeException | LinkageError exception) {
+            ImitationCoreApi.LOGGER.error("Chat channel provider {} failed during selection", provider.get().id(), exception);
+            return false;
+        }
     }
 
     private ChatDeliveryResult reject(ChatChannelRequest request, String reason) {

@@ -192,7 +192,21 @@ public final class PersistentImitatorFormLibrary implements ImitatorFormLibrary 
     }
 
     private ImitatorFormLibraryState state() {
-        return repository.formLibrary(ownerId);
+        ImitatorFormLibraryState state = repository.formLibrary(ownerId);
+        ImitatorFormLibraryState normalized = state;
+        for (Integer slot : state.forms().keySet()) {
+            if (slot >= limits.slotCapacity()) {
+                normalized = normalized.withoutForm(slot);
+            }
+        }
+        if (normalized.seenSnapshotIds().size() > limits.maxSeenForms()) {
+            java.util.List<UUID> retained = normalized.seenSnapshotIds().subList(normalized.seenSnapshotIds().size() - limits.maxSeenForms(), normalized.seenSnapshotIds().size());
+            normalized = new ImitatorFormLibraryState(normalized.schemaVersion(), normalized.forms(), normalized.selectedSlot(), normalized.pendingRecord(), retained, normalized.skillMode(), normalized.mirrorSyncEnabled());
+        }
+        if (!normalized.equals(state)) {
+            save(normalized);
+        }
+        return normalized;
     }
 
     private void save(ImitatorFormLibraryState state) {

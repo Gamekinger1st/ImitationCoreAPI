@@ -3,7 +3,6 @@ package com.github.gamekinger1st.imitationcoreapi.api.session;
 import com.github.gamekinger1st.imitationcoreapi.api.compat.CompatibilityAssessment;
 import com.github.gamekinger1st.imitationcoreapi.api.snapshot.BaselineSnapshot;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
@@ -56,10 +55,34 @@ class TransformationSessionTest {
         TemporaryStateReference reference = new TemporaryStateReference(
                 UUID.randomUUID(),
                 UUID.randomUUID(),
-                ResourceLocation.withDefaultNamespace("temporary_item"),
+                TemporaryStateKinds.EFFECT,
                 new CompoundTag(),
                 TemporaryStateStatus.ACTIVE
         );
         assertThrows(IllegalArgumentException.class, () -> session.addTemporaryState(reference, 11L));
+    }
+
+    @Test
+    void rejectsTemporaryStateRegressionsAfterCleanup() {
+        TransformationSession session = TransformationSession.begin(UUID.randomUUID(), UUID.randomUUID(), BaselineSnapshot.empty(), CompatibilityAssessment.full(), 10L);
+        UUID referenceId = UUID.randomUUID();
+        TemporaryStateReference reference = new TemporaryStateReference(referenceId, session.sessionId(), TemporaryStateKinds.EFFECT, new CompoundTag(), TemporaryStateStatus.PREPARED);
+        TransformationSession cleaned = session.addTemporaryState(reference, 11L).updateTemporaryState(referenceId, TemporaryStateStatus.CLEANED, 12L);
+
+        assertThrows(IllegalArgumentException.class, () -> cleaned.updateTemporaryState(referenceId, TemporaryStateStatus.ACTIVE, 13L));
+    }
+
+    @Test
+    void rejectsOversizedTemporaryStatePayloads() {
+        CompoundTag payload = new CompoundTag();
+        payload.putString("data", "x".repeat(TemporaryStateReference.MAX_PAYLOAD_BYTES));
+
+        assertThrows(IllegalArgumentException.class, () -> new TemporaryStateReference(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                TemporaryStateKinds.EFFECT,
+                payload,
+                TemporaryStateStatus.PREPARED
+        ));
     }
 }

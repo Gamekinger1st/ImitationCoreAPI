@@ -13,6 +13,7 @@ public final class ReplicaEntityTags {
     public static final String EXPIRES = "imitationcoreapi.replica_expires";
     public static final String SUPPRESS_DROPS = "imitationcoreapi.replica_suppress_drops";
     public static final String SUPPRESS_EXPERIENCE = "imitationcoreapi.replica_suppress_experience";
+    public static final String VISUAL_EQUIPMENT = "imitationcoreapi.replica_visual_equipment";
 
     private ReplicaEntityTags() {
     }
@@ -49,6 +50,14 @@ public final class ReplicaEntityTags {
 
     public static boolean suppressExperience(Entity entity) {
         return entity != null && entity.getPersistentData().getBoolean(SUPPRESS_EXPERIENCE);
+    }
+
+    public static void setVisualEquipment(Entity entity, CompoundTag equipment) {
+        entity.getPersistentData().put(VISUAL_EQUIPMENT, equipment.copy());
+    }
+
+    public static CompoundTag visualEquipment(Entity entity) {
+        return entity == null ? new CompoundTag() : entity.getPersistentData().getCompound(VISUAL_EQUIPMENT).copy();
     }
 
     private static Optional<UUID> uuid(Entity entity, String key) {

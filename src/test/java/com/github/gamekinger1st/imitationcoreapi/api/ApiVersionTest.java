@@ -2,10 +2,16 @@ package com.github.gamekinger1st.imitationcoreapi.api;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ApiVersionTest {
+    @Test
+    void currentApiVersionMatchesThePublishedModApi() {
+        assertEquals(new ApiVersion(0, 5, 0), ApiVersion.CURRENT);
+    }
+
     @Test
     void preOneZeroCompatibilityRequiresTheSameMinorVersion() {
         assertTrue(new ApiVersion(0, 1, 0).isBinaryCompatibleWith(new ApiVersion(0, 1, 5)));

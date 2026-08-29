@@ -1,5 +1,6 @@
 package com.github.gamekinger1st.imitationcoreapi.api.chat;
 
+import com.github.gamekinger1st.imitationcoreapi.ImitationCoreApi;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.Comparator;
@@ -22,9 +23,14 @@ public final class ChatModerationRegistry {
     public ChatModerationDecision evaluate(ChatModerationContext context) {
         Objects.requireNonNull(context, "context");
         for (ChatModerationProvider provider : orderedProviders()) {
-            ChatModerationDecision decision = Objects.requireNonNull(provider.evaluate(context), "chat moderation decision");
-            if (!decision.allowed()) {
-                return decision;
+            try {
+                ChatModerationDecision decision = Objects.requireNonNull(provider.evaluate(context), "chat moderation decision");
+                if (!decision.allowed()) {
+                    return decision;
+                }
+            } catch (RuntimeException | LinkageError exception) {
+                ImitationCoreApi.LOGGER.error("Chat moderation provider {} failed", provider.id(), exception);
+                return ChatModerationDecision.block("A chat moderation integration failed safely");
             }
         }
         return ChatModerationDecision.allow();

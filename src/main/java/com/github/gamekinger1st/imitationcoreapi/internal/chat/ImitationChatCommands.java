@@ -5,6 +5,7 @@ import com.github.gamekinger1st.imitationcoreapi.api.chat.ChatChannelSelectionRe
 import com.github.gamekinger1st.imitationcoreapi.api.chat.ChatChannels;
 import com.github.gamekinger1st.imitationcoreapi.api.chat.ChatMessageSource;
 import com.github.gamekinger1st.imitationcoreapi.api.service.ImitationCoreServices;
+import com.github.gamekinger1st.imitationcoreapi.internal.discord.DiscordChatBridge;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -17,6 +18,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import com.github.gamekinger1st.imitationcoreapi.internal.network.ImitationCoreNetwork;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -43,19 +45,35 @@ public final class ImitationChatCommands {
 
     private static LiteralArgumentBuilder<CommandSourceStack> root(String name) {
         return Commands.literal(name)
-                .requires(source -> source.getEntity() instanceof ServerPlayer)
                 .then(Commands.literal("global")
+                        .requires(source -> source.getEntity() instanceof ServerPlayer)
                         .executes(context -> select(context, ChatChannels.GLOBAL))
                         .then(Commands.argument("message", StringArgumentType.greedyString())
                                 .executes(context -> send(context, ChatChannels.GLOBAL, Optional.empty()))))
                 .then(Commands.literal("local")
+                        .requires(source -> source.getEntity() instanceof ServerPlayer)
                         .executes(context -> select(context, ChatChannels.LOCAL))
                         .then(Commands.argument("message", StringArgumentType.greedyString())
                                 .executes(context -> send(context, ChatChannels.LOCAL, Optional.empty()))))
                 .then(Commands.literal("direct")
+                        .requires(source -> source.getEntity() instanceof ServerPlayer)
                         .then(Commands.argument("target", EntityArgument.player())
                                 .then(Commands.argument("message", StringArgumentType.greedyString())
-                                        .executes(context -> send(context, ChatChannels.DIRECT, directTarget(context))))));
+                                        .executes(context -> send(context, ChatChannels.DIRECT, directTarget(context))))))
+                .then(Commands.literal("discord")
+                        .requires(source -> source.hasPermission(2))
+                        .executes(ImitationChatCommands::discordStatus)
+                        .then(Commands.literal("reload").executes(ImitationChatCommands::reloadDiscord)));
+    }
+
+    private static int discordStatus(CommandContext<CommandSourceStack> context) {
+        context.getSource().sendSuccess(() -> Component.literal(DiscordChatBridge.status(context.getSource().getServer())), false);
+        return 1;
+    }
+
+    private static int reloadDiscord(CommandContext<CommandSourceStack> context) {
+        context.getSource().sendSuccess(() -> Component.literal(DiscordChatBridge.reload(context.getSource().getServer())), true);
+        return 1;
     }
 
     private static int send(CommandContext<CommandSourceStack> context, ResourceLocation channelId, Optional<UUID> targetPlayerId) {
@@ -82,6 +100,7 @@ public final class ImitationChatCommands {
             return fail(context, result.message());
         }
         context.getSource().sendSuccess(() -> Component.literal(result.message()), false);
+        ImitationCoreNetwork.advertiseChat(player);
         return 1;
     }
 

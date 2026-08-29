@@ -41,7 +41,9 @@ public final class SnapshotSerialization {
         CompoundTag visualData = requireCompound(tag, "visual_data");
         List<SnapshotExtension> extensions = extensionsFromTag(tag.getList("extensions", Tag.TAG_COMPOUND));
         long capturedGameTime = tag.getLong("captured_game_time");
-        return new IdentitySnapshot(id, schemaVersion, entityType, displayName, entityData, visualData, extensions, capturedGameTime);
+        IdentitySnapshot snapshot = new IdentitySnapshot(id, schemaVersion, entityType, displayName, entityData, visualData, extensions, capturedGameTime);
+        SnapshotLimits.DEFAULT.validate(snapshot);
+        return snapshot;
     }
 
     public static CompoundTag baselineToTag(BaselineSnapshot snapshot) {
@@ -92,6 +94,9 @@ public final class SnapshotSerialization {
     }
 
     private static List<SnapshotExtension> extensionsFromTag(ListTag tags) {
+        if (tags.size() > SnapshotLimits.DEFAULT.maxExtensions()) {
+            throw new IllegalArgumentException("Snapshot has too many extensions");
+        }
         List<SnapshotExtension> extensions = new ArrayList<>(tags.size());
         for (int index = 0; index < tags.size(); index++) {
             extensions.add(extensionFromTag(tags.getCompound(index)));
@@ -108,7 +113,8 @@ public final class SnapshotSerialization {
 
     private static CompoundTag migrate(CompoundTag source, String schemaKey, int currentVersion, SchemaMigrationRegistry migrations, String subject) {
         if (!source.contains(schemaKey, Tag.TAG_INT)) {
-            throw new IllegalArgumentException("Missing schema field for " + subject);
+            source = source.copy();
+            source.putInt(schemaKey, 1);
         }
         int sourceVersion = source.getInt(schemaKey);
         if (sourceVersion < 1 || sourceVersion > currentVersion) {

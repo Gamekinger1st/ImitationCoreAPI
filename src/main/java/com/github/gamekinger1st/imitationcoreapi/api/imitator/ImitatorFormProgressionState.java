@@ -14,11 +14,14 @@ import java.util.UUID;
 public record ImitatorFormProgressionState(
         UUID snapshotId,
         Optional<DisguiseAppraisalSnapshot> lastObservedAppraisal,
+        java.util.Map<net.minecraft.resources.ResourceLocation, Double> lastObservedAttributes,
         ImitatorFormStatDelta accumulatedDelta
 ) {
     private static final String SNAPSHOT_ID = "snapshot_id";
     private static final String LAST_APPRAISAL = "last_appraisal";
     private static final String ACCUMULATED_DELTA = "accumulated_delta";
+    private static final String LAST_ATTRIBUTES = "last_attributes";
+    private static final String ATTRIBUTE_DELTAS = "attribute_deltas";
     private static final String HEALTH = "health";
     private static final String MAX_HEALTH = "max_health";
     private static final String ARMOR = "armor";
@@ -31,32 +34,50 @@ public record ImitatorFormProgressionState(
     public ImitatorFormProgressionState {
         Objects.requireNonNull(snapshotId, "snapshotId");
         Objects.requireNonNull(lastObservedAppraisal, "lastObservedAppraisal");
+        Objects.requireNonNull(lastObservedAttributes, "lastObservedAttributes");
+        lastObservedAttributes = java.util.Map.copyOf(lastObservedAttributes);
         Objects.requireNonNull(accumulatedDelta, "accumulatedDelta");
     }
 
+    public ImitatorFormProgressionState(UUID snapshotId, Optional<DisguiseAppraisalSnapshot> lastObservedAppraisal, ImitatorFormStatDelta accumulatedDelta) {
+        this(snapshotId, lastObservedAppraisal, java.util.Map.of(), accumulatedDelta);
+    }
+
     public static ImitatorFormProgressionState empty(UUID snapshotId) {
-        return new ImitatorFormProgressionState(snapshotId, Optional.empty(), ImitatorFormStatDelta.EMPTY);
+        return new ImitatorFormProgressionState(snapshotId, Optional.empty(), java.util.Map.of(), ImitatorFormStatDelta.EMPTY);
     }
 
     public ImitatorFormProgressionState observe(DisguiseAppraisalSnapshot current) {
+        return observe(current, java.util.Map.of());
+    }
+
+    public ImitatorFormProgressionState observe(DisguiseAppraisalSnapshot current, java.util.Map<net.minecraft.resources.ResourceLocation, Double> attributes) {
         Objects.requireNonNull(current, "current");
+        Objects.requireNonNull(attributes, "attributes");
         if (lastObservedAppraisal.isEmpty()) {
-            return new ImitatorFormProgressionState(snapshotId, Optional.of(current), accumulatedDelta);
+            return new ImitatorFormProgressionState(snapshotId, Optional.of(current), attributes, accumulatedDelta);
         }
-        ImitatorFormStatDelta delta = ImitatorFormStatDelta.positiveBetween(lastObservedAppraisal.get(), current);
-        DisguiseAppraisalSnapshot nextLast = ImitatorFormStats.fromAppraisal(lastObservedAppraisal.get()).apply(delta).appraisal().orElse(current);
-        return new ImitatorFormProgressionState(snapshotId, Optional.of(nextLast), accumulatedDelta.plus(delta));
+        ImitatorFormStatDelta delta = ImitatorFormStatDelta.positiveBetween(lastObservedAppraisal.get(), current, lastObservedAttributes, attributes);
+        return new ImitatorFormProgressionState(snapshotId, Optional.of(current), attributes, accumulatedDelta.plus(delta));
     }
 
     public ImitatorFormStatDelta lastDelta(DisguiseAppraisalSnapshot current) {
+        return lastDelta(current, java.util.Map.of());
+    }
+
+    public ImitatorFormStatDelta lastDelta(DisguiseAppraisalSnapshot current, java.util.Map<net.minecraft.resources.ResourceLocation, Double> attributes) {
         Objects.requireNonNull(current, "current");
-        return lastObservedAppraisal.map(previous -> ImitatorFormStatDelta.positiveBetween(previous, current)).orElse(ImitatorFormStatDelta.EMPTY);
+        Objects.requireNonNull(attributes, "attributes");
+        return lastObservedAppraisal.map(previous -> ImitatorFormStatDelta.positiveBetween(previous, current, lastObservedAttributes, attributes)).orElse(ImitatorFormStatDelta.EMPTY);
     }
 
     public CompoundTag toTag() {
         CompoundTag tag = new CompoundTag();
         tag.putUUID(SNAPSHOT_ID, snapshotId);
         lastObservedAppraisal.ifPresent(appraisal -> tag.put(LAST_APPRAISAL, DisguiseAppraisalExtensions.create(appraisal).payload()));
+        if (!lastObservedAttributes.isEmpty()) {
+            tag.put(LAST_ATTRIBUTES, attributesToTag(lastObservedAttributes));
+        }
         if (!accumulatedDelta.isEmpty()) {
             tag.put(ACCUMULATED_DELTA, deltaToTag(accumulatedDelta));
         }
@@ -74,7 +95,10 @@ public record ImitatorFormProgressionState(
         ImitatorFormStatDelta delta = tag.contains(ACCUMULATED_DELTA, Tag.TAG_COMPOUND)
                 ? deltaFromTag(tag.getCompound(ACCUMULATED_DELTA))
                 : ImitatorFormStatDelta.EMPTY;
-        return new ImitatorFormProgressionState(tag.getUUID(SNAPSHOT_ID), last, delta);
+        java.util.Map<net.minecraft.resources.ResourceLocation, Double> attributes = tag.contains(LAST_ATTRIBUTES, Tag.TAG_COMPOUND)
+                ? attributesFromTag(tag.getCompound(LAST_ATTRIBUTES))
+                : java.util.Map.of();
+        return new ImitatorFormProgressionState(tag.getUUID(SNAPSHOT_ID), last, attributes, delta);
     }
 
     private static Optional<DisguiseAppraisalSnapshot> appraisalFromTag(CompoundTag tag) {
@@ -94,6 +118,9 @@ public record ImitatorFormProgressionState(
             tensura.putDouble(SPIRITUAL_HEALTH, vitals.spiritualHealth());
             tag.put(TENSURA, tensura);
         });
+        if (!delta.attributeBaseValues().isEmpty()) {
+            tag.put(ATTRIBUTE_DELTAS, attributesToTag(delta.attributeBaseValues()));
+        }
         return tag;
     }
 
@@ -112,7 +139,25 @@ public record ImitatorFormProgressionState(
                 tag.contains(HEALTH, Tag.TAG_FLOAT) ? tag.getFloat(HEALTH) : 0F,
                 tag.contains(MAX_HEALTH, Tag.TAG_FLOAT) ? tag.getFloat(MAX_HEALTH) : 0F,
                 tag.contains(ARMOR, Tag.TAG_INT) ? tag.getInt(ARMOR) : 0,
-                vitals
+                vitals,
+                tag.contains(ATTRIBUTE_DELTAS, Tag.TAG_COMPOUND) ? attributesFromTag(tag.getCompound(ATTRIBUTE_DELTAS)) : java.util.Map.of()
         );
+    }
+
+    private static CompoundTag attributesToTag(java.util.Map<net.minecraft.resources.ResourceLocation, Double> attributes) {
+        CompoundTag tag = new CompoundTag();
+        attributes.forEach((id, value) -> tag.putDouble(id.toString(), value));
+        return tag;
+    }
+
+    private static java.util.Map<net.minecraft.resources.ResourceLocation, Double> attributesFromTag(CompoundTag tag) {
+        java.util.LinkedHashMap<net.minecraft.resources.ResourceLocation, Double> attributes = new java.util.LinkedHashMap<>();
+        for (String key : tag.getAllKeys()) {
+            net.minecraft.resources.ResourceLocation id = net.minecraft.resources.ResourceLocation.tryParse(key);
+            if (id != null && tag.contains(key, Tag.TAG_DOUBLE)) {
+                attributes.put(id, tag.getDouble(key));
+            }
+        }
+        return java.util.Map.copyOf(attributes);
     }
 }

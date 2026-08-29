@@ -29,7 +29,9 @@ public final class ActiveFormTargetingHooks {
     }
 
     public static Optional<ResourceLocation> effectiveTypeId(LivingEntity entity) {
-        if (!(entity instanceof ServerPlayer) || !entity.getPersistentData().contains(ACTIVE_FORM_TAG, Tag.TAG_COMPOUND)) {
+        if (!ImitationCoreConfig.mobTargetingEnabled()
+                || !(entity instanceof ServerPlayer)
+                || !entity.getPersistentData().contains(ACTIVE_FORM_TAG, Tag.TAG_COMPOUND)) {
             return Optional.empty();
         }
         CompoundTag marker = entity.getPersistentData().getCompound(ACTIVE_FORM_TAG);
@@ -44,5 +46,18 @@ public final class ActiveFormTargetingHooks {
             return false;
         }
         return new MobImitationTargetingService(ImitationCoreServices.forServer(player.serverLevel().getServer())).shouldSuppress(aggressor, player);
+    }
+
+    public static Optional<Boolean> animalPreyDecision(LivingEntity subordinate, LivingEntity target) {
+        Optional<ResourceLocation> formType = effectiveTypeId(target);
+        if (formType.isEmpty()) {
+            return Optional.empty();
+        }
+        EntityType<?> effectiveType = BuiltInRegistries.ENTITY_TYPE.getOptional(formType.get()).orElse(target.getType());
+        net.minecraft.tags.TagKey<EntityType<?>> animalPrey = net.minecraft.tags.TagKey.create(
+                net.minecraft.core.registries.Registries.ENTITY_TYPE,
+                ResourceLocation.fromNamespaceAndPath("tensura", "animal_prey")
+        );
+        return Optional.of(effectiveType != subordinate.getType() && effectiveType.is(animalPrey));
     }
 }

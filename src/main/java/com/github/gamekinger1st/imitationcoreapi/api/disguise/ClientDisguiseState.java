@@ -2,6 +2,7 @@ package com.github.gamekinger1st.imitationcoreapi.api.disguise;
 
 import com.github.gamekinger1st.imitationcoreapi.api.compat.CompatibilityLevel;
 import com.github.gamekinger1st.imitationcoreapi.api.session.TransformationScope;
+import com.github.gamekinger1st.imitationcoreapi.api.imitator.ImitatorTransformationModifiers;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 
@@ -22,7 +23,8 @@ public record ClientDisguiseState(
         CompatibilityLevel compatibility,
         long revision,
         Optional<PlayerDisguiseProfile> playerProfile,
-        Optional<DisguiseAppraisalSnapshot> appraisal
+        Optional<DisguiseAppraisalSnapshot> appraisal,
+        ImitatorTransformationModifiers transformationModifiers
 ) {
     public ClientDisguiseState(
             int entityId,
@@ -38,7 +40,7 @@ public record ClientDisguiseState(
             long revision,
             Optional<PlayerDisguiseProfile> playerProfile
     ) {
-        this(entityId, ownerId, sessionId, snapshotId, scope, entityType, displayName, entityData, visualData, compatibility, revision, playerProfile, Optional.empty());
+        this(entityId, ownerId, sessionId, snapshotId, scope, entityType, displayName, entityData, visualData, compatibility, revision, playerProfile, Optional.empty(), ImitatorTransformationModifiers.DEFAULT);
     }
 
     public ClientDisguiseState(
@@ -54,7 +56,7 @@ public record ClientDisguiseState(
             CompatibilityLevel compatibility,
             long revision
     ) {
-        this(entityId, ownerId, sessionId, snapshotId, scope, entityType, displayName, entityData, visualData, compatibility, revision, Optional.empty(), Optional.empty());
+        this(entityId, ownerId, sessionId, snapshotId, scope, entityType, displayName, entityData, visualData, compatibility, revision, Optional.empty(), Optional.empty(), ImitatorTransformationModifiers.DEFAULT);
     }
 
     public ClientDisguiseState(
@@ -69,7 +71,25 @@ public record ClientDisguiseState(
             CompatibilityLevel compatibility,
             long revision
     ) {
-        this(entityId, ownerId, sessionId, snapshotId, TransformationScope.GAMEPLAY, entityType, displayName, entityData, visualData, compatibility, revision, Optional.empty(), Optional.empty());
+        this(entityId, ownerId, sessionId, snapshotId, TransformationScope.GAMEPLAY, entityType, displayName, entityData, visualData, compatibility, revision, Optional.empty(), Optional.empty(), ImitatorTransformationModifiers.DEFAULT);
+    }
+
+    public ClientDisguiseState(
+            int entityId,
+            UUID ownerId,
+            UUID sessionId,
+            UUID snapshotId,
+            TransformationScope scope,
+            ResourceLocation entityType,
+            String displayName,
+            CompoundTag entityData,
+            CompoundTag visualData,
+            CompatibilityLevel compatibility,
+            long revision,
+            Optional<PlayerDisguiseProfile> playerProfile,
+            Optional<DisguiseAppraisalSnapshot> appraisal
+    ) {
+        this(entityId, ownerId, sessionId, snapshotId, scope, entityType, displayName, entityData, visualData, compatibility, revision, playerProfile, appraisal, ImitatorTransformationModifiers.DEFAULT);
     }
 
     public ClientDisguiseState {
@@ -87,6 +107,7 @@ public record ClientDisguiseState(
         Objects.requireNonNull(compatibility, "compatibility");
         Objects.requireNonNull(playerProfile, "playerProfile");
         Objects.requireNonNull(appraisal, "appraisal");
+        Objects.requireNonNull(transformationModifiers, "transformationModifiers");
         displayName = displayName.strip();
         if (displayName.length() > 256) {
             throw new IllegalArgumentException("displayName exceeds the configured limit");

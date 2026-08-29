@@ -20,6 +20,9 @@ public final class RaceFunctionKeys {
     public static final ResourceLocation ON_DEATH = key("on_death");
     public static final ResourceLocation ON_RESPAWN = key("on_respawn");
     public static final ResourceLocation RESPAWN_DIMENSION = key("respawn_dimension");
+    public static final ResourceLocation RACE_ICON = key("race_icon");
+    public static final ResourceLocation IS_INTRINSIC_SKILL = key("is_intrinsic_skill");
+    public static final ResourceLocation DIFFICULTY = key("difficulty");
     public static final ResourceLocation INTRINSIC_SKILLS = key("intrinsic_skills");
     public static final ResourceLocation LEARN_INTRINSIC_SKILLS = key("learn_intrinsic_skills");
     public static final ResourceLocation NEXT_EVOLUTIONS = key("next_evolutions");
@@ -34,6 +37,8 @@ public final class RaceFunctionKeys {
     public static final ResourceLocation TRIGGER_EVOLUTION_REWARDS = key("trigger_evolution_rewards");
     public static final ResourceLocation ALIGNMENT = key("alignment");
     public static final ResourceLocation INTRINSIC_LEARNABLE = key("intrinsic_learnable");
+    public static final ResourceLocation GAIN_INTRINSIC_LEARNABLE = key("gain_intrinsic_learnable");
+    public static final ResourceLocation GUARANTEE_ELEMENTAL = key("guarantee_elemental");
     public static final ResourceLocation ELEMENTAL_SPIRIT_CHANCE = key("elemental_spirit_chance");
 
     private RaceFunctionKeys() {
@@ -56,6 +61,9 @@ public final class RaceFunctionKeys {
                 ON_DEATH,
                 ON_RESPAWN,
                 RESPAWN_DIMENSION,
+                RACE_ICON,
+                IS_INTRINSIC_SKILL,
+                DIFFICULTY,
                 INTRINSIC_SKILLS,
                 LEARN_INTRINSIC_SKILLS,
                 NEXT_EVOLUTIONS,
@@ -70,6 +78,8 @@ public final class RaceFunctionKeys {
                 TRIGGER_EVOLUTION_REWARDS,
                 ALIGNMENT,
                 INTRINSIC_LEARNABLE,
+                GAIN_INTRINSIC_LEARNABLE,
+                GUARANTEE_ELEMENTAL,
                 ELEMENTAL_SPIRIT_CHANCE
         );
     }

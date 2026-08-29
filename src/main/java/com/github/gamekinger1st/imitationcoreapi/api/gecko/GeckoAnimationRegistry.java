@@ -59,6 +59,24 @@ public final class GeckoAnimationRegistry {
         return false;
     }
 
+    public Optional<Boolean> isPlaying(Entity entity, String controllerName, String animationName) {
+        Objects.requireNonNull(entity, "entity");
+        Objects.requireNonNull(controllerName, "controllerName");
+        Objects.requireNonNull(animationName, "animationName");
+        for (GeckoAnimationBridge bridge : orderedBridges()) {
+            try {
+                if (bridge.supports(entity)) {
+                    Optional<Boolean> playing = Objects.requireNonNull(bridge.isPlaying(entity, controllerName, animationName), "bridge playing result");
+                    if (playing.isPresent()) {
+                        return playing;
+                    }
+                }
+            } catch (RuntimeException | LinkageError exception) {
+            }
+        }
+        return Optional.empty();
+    }
+
     private boolean invoke(Entity entity, String controllerName, String animationName, boolean trigger) {
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(controllerName, "controllerName");

@@ -55,6 +55,25 @@ public final class DisguiseAnimationRegistry {
         return handled;
     }
 
+    public void clearSession(java.util.UUID sessionId) {
+        Objects.requireNonNull(sessionId, "sessionId");
+        for (DisguiseAnimationAdapter adapter : orderedAdapters()) {
+            try {
+                adapter.clearSession(sessionId);
+            } catch (RuntimeException | LinkageError exception) {
+            }
+        }
+    }
+
+    public void clearAllSessions() {
+        for (DisguiseAnimationAdapter adapter : orderedAdapters()) {
+            try {
+                adapter.clearAllSessions();
+            } catch (RuntimeException | LinkageError exception) {
+            }
+        }
+    }
+
     private DisguiseAnimationIntent intent(Entity imitation, Entity subject, ClientDisguiseState state, float partialTick) {
         DisguiseAnimationIntent intent = DisguiseAnimationIntent.from(subject, partialTick);
         for (DisguiseAnimationIntentProvider provider : orderedIntentProviders()) {

@@ -41,6 +41,7 @@ public final class DiscordChatBridge implements AutoCloseable {
     private final AtomicBoolean closed = new AtomicBoolean();
     private volatile boolean inboundInitialized;
     private volatile String lastInboundMessageId = "";
+    private volatile long inboundRetryAfterNanos;
 
     private DiscordChatBridge(MinecraftServer server) {
         this.server = server;
@@ -56,6 +57,46 @@ public final class DiscordChatBridge implements AutoCloseable {
         Optional.ofNullable(BRIDGES.remove(server)).ifPresent(DiscordChatBridge::close);
     }
 
+    public static String reload(MinecraftServer server) {
+        stop(server);
+        start(server);
+        return status(server);
+    }
+
+    public static String status(MinecraftServer server) {
+        DiscordChatBridge bridge = BRIDGES.get(server);
+        if (bridge == null || bridge.closed.get()) {
+            return "Discord bridge is stopped";
+        }
+        boolean outboundEnabled = bridge.config.webhookUri().isPresent();
+        boolean inboundEnabled = bridge.config.botToken().isPresent() && bridge.config.channelId().isPresent();
+        return "Discord bridge outbound=" + (outboundEnabled ? "enabled" : "disabled") + ", inbound=" + (inboundEnabled ? "enabled" : "disabled");
+    }
+
+    public static void relaySystem(MinecraftServer server, String message) {
+        DiscordChatBridge bridge = BRIDGES.get(server);
+        if (bridge == null || bridge.closed.get() || !bridge.config.relaySystemMessages()) {
+            return;
+        }
+        bridge.config.webhookUri().ifPresent(webhookUri -> {
+            ChatEnvelope envelope = new ChatEnvelope(
+                    UUID.randomUUID(),
+                    java.time.Instant.now(),
+                    ChatChannels.SYSTEM,
+                    ChatChannelKind.SYSTEM,
+                    ChatMessageSource.SERVER_SYSTEM,
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    boundedChatText(message)
+            );
+            try {
+                bridge.outbound.execute(() -> bridge.postWebhook(webhookUri, DiscordWebhookPayload.json(DiscordWebhookPayload.format(envelope))));
+            } catch (RejectedExecutionException ignored) {
+            }
+        });
+    }
+
     private void startInbound() {
         Optional<String> botToken = config.botToken();
         Optional<String> channelId = config.channelId();
@@ -63,7 +104,7 @@ public final class DiscordChatBridge implements AutoCloseable {
             return;
         }
         if (botToken.isEmpty() || channelId.isEmpty()) {
-            ImitationCoreApi.LOGGER.warn("Discord inbound chat requires both discord.bot_token and discord.channel_id");
+            ImitationCoreApi.LOGGER.warn("Discord inbound chat requires both bot_token and channel_id");
             return;
         }
         inbound.scheduleWithFixedDelay(this::pollInbound, 0L, config.pollIntervalSeconds(), TimeUnit.SECONDS);
@@ -138,7 +179,7 @@ public final class DiscordChatBridge implements AutoCloseable {
     }
 
     private void pollInbound() {
-        if (closed.get()) {
+        if (closed.get() || System.nanoTime() < inboundRetryAfterNanos) {
             return;
         }
         Optional<String> botToken = config.botToken();
@@ -154,6 +195,17 @@ public final class DiscordChatBridge implements AutoCloseable {
                     .GET()
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() == 429) {
+                response.headers().firstValue("Retry-After").ifPresent(value -> {
+                    try {
+                        long delayMillis = Math.max(1L, Math.round(Double.parseDouble(value) * 1_000D));
+                        inboundRetryAfterNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(delayMillis);
+                    } catch (NumberFormatException ignored) {
+                        inboundRetryAfterNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(config.pollIntervalSeconds());
+                    }
+                });
+                return;
+            }
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 ImitationCoreApi.LOGGER.warn("Discord inbound chat poll failed with HTTP {}", response.statusCode());
                 return;

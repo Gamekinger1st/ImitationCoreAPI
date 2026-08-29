@@ -1,5 +1,6 @@
 package com.github.gamekinger1st.imitationcoreapi.api.network;
 
+import com.github.gamekinger1st.imitationcoreapi.ImitationCoreApi;
 import com.github.gamekinger1st.imitationcoreapi.api.imitator.ImitatorMenuRequest;
 
 import java.util.List;
@@ -21,7 +22,11 @@ public final class ImitatorMenuBus {
             return;
         }
         for (ImitatorMenuListener listener : listeners) {
-            listener.onImitatorMenuRequested(request);
+            try {
+                listener.onImitatorMenuRequested(request);
+            } catch (RuntimeException | LinkageError exception) {
+                ImitationCoreApi.LOGGER.error("An imitation menu listener failed", exception);
+            }
         }
     }
 }

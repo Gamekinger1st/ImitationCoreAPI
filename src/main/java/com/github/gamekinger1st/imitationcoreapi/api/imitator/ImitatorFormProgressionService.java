@@ -41,14 +41,15 @@ public final class ImitatorFormProgressionService {
             return Optional.empty();
         }
         DisguiseAppraisalSnapshot current = currentAppraisal(player);
+        java.util.Map<ResourceLocation, Double> currentAttributes = currentAttributes(player);
         TemporaryStateReference reference = progressionReference(session.get())
                 .orElseGet(() -> createProgressionReference(session.get(), player.level().getGameTime()).orElse(null));
         if (reference == null) {
             return Optional.empty();
         }
         ImitatorFormProgressionState state = ImitatorFormProgressionState.fromTag(reference.payload());
-        ImitatorFormStatDelta delta = state.lastDelta(current);
-        ImitatorFormProgressionState updated = state.observe(current);
+        ImitatorFormStatDelta delta = state.lastDelta(current, currentAttributes);
+        ImitatorFormProgressionState updated = state.observe(current, currentAttributes);
         SessionTransitionResult updatedState = transformations.updateTemporaryStatePayload(session.get().sessionId(), reference.referenceId(), updated.toTag(), player.level().getGameTime());
         if (!updatedState.accepted()) {
             return Optional.empty();
@@ -131,5 +132,18 @@ public final class ImitatorFormProgressionService {
                 player.getArmorValue(),
                 ImitationApi.tensuraStates().capture(player).map(state -> state.vitals())
         );
+    }
+
+    private java.util.Map<ResourceLocation, Double> currentAttributes(ServerPlayer player) {
+        java.util.LinkedHashMap<ResourceLocation, Double> attributes = new java.util.LinkedHashMap<>();
+        net.minecraft.nbt.ListTag values = player.getAttributes().save();
+        for (int index = 0; index < values.size(); index++) {
+            CompoundTag value = values.getCompound(index);
+            ResourceLocation id = ResourceLocation.tryParse(value.getString("id"));
+            if (id != null && value.contains("base", net.minecraft.nbt.Tag.TAG_DOUBLE)) {
+                attributes.put(id, value.getDouble("base"));
+            }
+        }
+        return java.util.Map.copyOf(attributes);
     }
 }

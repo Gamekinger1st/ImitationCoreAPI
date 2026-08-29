@@ -19,7 +19,7 @@ class TensuraCopyPolicyTest {
 
     @Test
     void enforcesPrecisionAndEpLimitsForMirrorSync() {
-        TensuraCopyPolicy policy = new TensuraCopyPolicy(1.5D, 0.75D, true);
+        TensuraCopyPolicy policy = new TensuraCopyPolicy(1.5D, 0.75D, true, true, false);
         TensuraVitals imitator = new TensuraVitals(100D, 10D, 10D, 10D);
 
         assertFalse(policy.evaluate(imitator, new TensuraVitals(50D, 10D, 10D, 10D), 0.5D, true).accepted());
@@ -29,11 +29,23 @@ class TensuraCopyPolicyTest {
 
     @Test
     void scalesCopiedPowerToTheLowerOfPrecisionAndOwnerPower() {
-        TensuraCopyPolicy policy = new TensuraCopyPolicy(1.5D, 0.5D, true);
+        TensuraCopyPolicy policy = new TensuraCopyPolicy(1.5D, 0.5D, true, true, true);
         TensuraVitals imitator = new TensuraVitals(100D, 10D, 10D, 10D);
         TensuraVitals target = new TensuraVitals(150D, 10D, 10D, 10D);
 
         assertEquals(2D / 3D, policy.powerRatio(imitator, target));
         assertEquals(2D / 3D, policy.evaluate(imitator, target, 0.9D, true).scale());
+    }
+
+    @Test
+    void defaultImitatorPolicyCopiesExactStatsWithoutBlockingStrongerForms() {
+        TensuraCopyPolicy policy = new TensuraCopyPolicy(1D, 0.5D, true);
+        TensuraVitals imitator = new TensuraVitals(100D, 10D, 10D, 10D);
+        TensuraVitals target = new TensuraVitals(1_000D, 200D, 300D, 50D);
+
+        TensuraCopyPolicy.TensuraCopyPolicyDecision decision = policy.evaluate(imitator, target, 1D, true);
+
+        assertTrue(decision.accepted());
+        assertEquals(1D, decision.scale());
     }
 }

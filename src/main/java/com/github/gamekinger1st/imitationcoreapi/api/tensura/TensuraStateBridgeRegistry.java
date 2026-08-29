@@ -38,6 +38,23 @@ public final class TensuraStateBridgeRegistry {
         return Optional.empty();
     }
 
+    public Optional<TensuraVitals> captureVitals(LivingEntity entity) {
+        Objects.requireNonNull(entity, "entity");
+        for (TensuraStateBridge bridge : orderedBridges()) {
+            try {
+                if (!bridge.isAvailable()) {
+                    continue;
+                }
+                Optional<TensuraVitals> vitals = Objects.requireNonNull(bridge.captureVitals(entity), "bridge vitals result");
+                if (vitals.isPresent()) {
+                    return vitals;
+                }
+            } catch (RuntimeException | LinkageError exception) {
+            }
+        }
+        return Optional.empty();
+    }
+
     public TensuraStateOperationResult restore(LivingEntity entity, TensuraStateSnapshot snapshot) {
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(snapshot, "snapshot");

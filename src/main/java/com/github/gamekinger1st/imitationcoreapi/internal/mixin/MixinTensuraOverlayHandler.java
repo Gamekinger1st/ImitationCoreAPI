@@ -6,6 +6,7 @@ import com.github.gamekinger1st.imitationcoreapi.api.disguise.DisguiseAppraisalS
 import com.github.gamekinger1st.imitationcoreapi.internal.client.ImitatorAppraisalRenderer;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import org.spongepowered.asm.mixin.Mixin;
@@ -33,13 +34,12 @@ public abstract class MixinTensuraOverlayHandler {
     private static float analysisOpacity;
 
     @Shadow
-    private static float analysisScale;
-
-    @Shadow
-    private static float[] analysisPositions;
-
-    @Shadow
     private static boolean isLeftSide(int element) {
+        throw new AssertionError();
+    }
+
+    @Shadow
+    private static void renderWithFlipping(ResourceLocation texture, float x, float y, int width, int height, float alpha, boolean isLeftSide) {
         throw new AssertionError();
     }
 
@@ -53,9 +53,9 @@ public abstract class MixinTensuraOverlayHandler {
         if (state.isEmpty() || appraisal.isEmpty()) {
             return;
         }
-        float x = analysisPositions != null && analysisPositions.length > 0 ? analysisPositions[0] : 0F;
-        float y = analysisPositions != null && analysisPositions.length > 1 ? analysisPositions[1] : 0F;
-        ImitatorAppraisalRenderer.render(graphics, font, analysisOpacity, analysisScale, x, y, isLeftSide(3), state.get(), appraisal.get());
+        boolean leftSide = isLeftSide(3);
+        renderWithFlipping(ImitatorAppraisalRenderer.ENTITY_ANALYSIS, 0F, 0F, 95, 156, analysisOpacity, leftSide);
+        ImitatorAppraisalRenderer.render(graphics, font, state.get(), appraisal.get(), target, leftSide);
         callback.cancel();
     }
 }

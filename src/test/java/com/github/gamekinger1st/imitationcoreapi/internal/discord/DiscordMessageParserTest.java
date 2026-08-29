@@ -41,4 +41,15 @@ class DiscordMessageParserTest {
         assertEquals(List.of("9223372036854775807", "9223372036854775808"), messages.stream().map(DiscordInboundMessage::messageId).toList());
         assertEquals("9223372036854775808", DiscordMessageParser.latestMessageId(payload).orElseThrow());
     }
+
+    @Test
+    void relaysAttachmentsAndReplyContext() {
+        String payload = """
+                [{"id":"7","channel_id":"42","content":"look","author":{"id":"11","username":"First","bot":false},"attachments":[{"url":"https://cdn.discordapp.com/file.png"}],"referenced_message":{"content":"earlier","author":{"username":"Second"}}}]
+                """;
+
+        DiscordInboundMessage message = DiscordMessageParser.parseChannelMessages(payload, "42").getFirst();
+
+        assertEquals("[reply to Second: earlier] look https://cdn.discordapp.com/file.png", message.content());
+    }
 }

@@ -9,9 +9,9 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin(Entity.class)
+@Mixin(value = Entity.class, remap = false)
 public abstract class MixinEntityEyeHeight {
-    @Inject(method = "getEyeHeight()F", at = @At("RETURN"), cancellable = true, remap = false)
+    @Inject(method = "getEyeHeight()F", at = @At("RETURN"), cancellable = true)
     private void imitationcoreapi$copyCameraEyeHeight(CallbackInfoReturnable<Float> callback) {
         Entity entity = (Entity)(Object)this;
         if (Minecraft.getInstance().player != entity) {

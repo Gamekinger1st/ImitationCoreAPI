@@ -7,6 +7,8 @@ import com.github.gamekinger1st.imitationcoreapi.api.application.TransformationA
 import com.github.gamekinger1st.imitationcoreapi.api.application.TransformationApplicationContext;
 import com.github.gamekinger1st.imitationcoreapi.api.application.TransformationReversionContext;
 import com.github.gamekinger1st.imitationcoreapi.api.imitator.ImitatorReplicaPolicy;
+import com.github.gamekinger1st.imitationcoreapi.api.imitator.ImitatorSkillCopyExtensions;
+import com.github.gamekinger1st.imitationcoreapi.api.imitator.ImitatorSkillCopySnapshot;
 import com.github.gamekinger1st.imitationcoreapi.api.replica.ReplicaEntityTags;
 import com.github.gamekinger1st.imitationcoreapi.api.service.ImitationCoreServices;
 import com.github.gamekinger1st.imitationcoreapi.api.service.SessionTransitionResult;
@@ -16,6 +18,9 @@ import com.github.gamekinger1st.imitationcoreapi.api.session.TemporaryStateRefer
 import com.github.gamekinger1st.imitationcoreapi.api.session.TemporaryStateStatus;
 import com.github.gamekinger1st.imitationcoreapi.api.session.TransformationScope;
 import com.github.gamekinger1st.imitationcoreapi.api.snapshot.IdentitySnapshot;
+import com.github.gamekinger1st.imitationcoreapi.api.skill.SkillOperationResult;
+import com.github.gamekinger1st.imitationcoreapi.api.skill.SkillUpdateRequest;
+import com.github.gamekinger1st.imitationcoreapi.api.skill.TemporarySkillOwnership;
 import com.github.gamekinger1st.imitationcoreapi.api.tensura.TensuraStateExtensions;
 import com.github.gamekinger1st.imitationcoreapi.api.tensura.TensuraStateOperationResult;
 import com.github.gamekinger1st.imitationcoreapi.api.tensura.TensuraStateSnapshot;
@@ -34,9 +39,6 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
-import net.minecraft.world.item.Item;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
@@ -93,6 +95,7 @@ public final class ImitatorReplicaApplicationAdapter implements TransformationAp
         applyTensuraState(replica, context.snapshot(), context.session().gameplayScale(), policy);
         long expires = context.gameTime() + policy.lifetimeTicks();
         ReplicaEntityTags.mark(replica, context.owner().getUUID(), context.session().sessionId(), expires, policy.suppressDrops(), policy.suppressExperience());
+        ReplicaEntityTags.setVisualEquipment(replica, visualEquipment(context.snapshot().visualData()));
         replica.addTag("imitationcoreapi_replica");
         if (replica instanceof Mob mob) {
             if (policy.persistentMob()) {
@@ -107,7 +110,8 @@ public final class ImitatorReplicaApplicationAdapter implements TransformationAp
         }
         CompoundTag payload = payload(replica, level, policy, expires);
         TransformationService transformations = ImitationCoreServices.forServer(context.server());
-        TemporaryStateReference reference = new TemporaryStateReference(UUID.randomUUID(), context.session().sessionId(), id(), TemporaryStateKinds.REPLICA_ENTITY, payload, TemporaryStateStatus.PREPARED);
+        UUID referenceId = UUID.randomUUID();
+        TemporaryStateReference reference = new TemporaryStateReference(referenceId, context.session().sessionId(), id(), TemporaryStateKinds.REPLICA_ENTITY, payload, TemporaryStateStatus.PREPARED);
         SessionTransitionResult added = transformations.addTemporaryState(context.session().sessionId(), reference, context.gameTime());
         if (!added.accepted()) {
             replica.discard();
@@ -117,6 +121,13 @@ public final class ImitatorReplicaApplicationAdapter implements TransformationAp
             replica.discard();
             throw new IllegalStateException("Replica entity could not be added to the level");
         }
+        try {
+            applyRecordedSkills(replica, context.snapshot(), policy, context.session().sessionId(), referenceId);
+        } catch (RuntimeException | LinkageError exception) {
+            replica.discard();
+            throw exception;
+        }
+        com.github.gamekinger1st.imitationcoreapi.internal.network.ImitationCoreNetwork.syncReplicaVisuals(replica);
         SessionTransitionResult activated = transformations.updateTemporaryState(context.session().sessionId(), reference.referenceId(), TemporaryStateStatus.ACTIVE, context.gameTime());
         if (!activated.accepted()) {
             replica.discard();
@@ -176,7 +187,10 @@ public final class ImitatorReplicaApplicationAdapter implements TransformationAp
         }
         CompoundTag payload = reference.payload();
         Optional<Entity> entity = findReplica(server, payload);
-        if (entity.isEmpty() || entity.get().isRemoved() || !entity.get().isAlive()) {
+        if (entity.isEmpty()) {
+            return false;
+        }
+        if (entity.get().isRemoved() || !entity.get().isAlive()) {
             return true;
         }
         long expires = payload.getLong("expires_game_time");
@@ -192,11 +206,11 @@ public final class ImitatorReplicaApplicationAdapter implements TransformationAp
 
     private static Optional<EntityType<?>> replicaType(IdentitySnapshot snapshot, ImitatorReplicaPolicy policy) {
         if (snapshot.entityType().equals(PLAYER) && policy.fallbackPlayerForms()) {
-            return Optional.of(EntityType.ZOMBIE);
+            return Optional.of(EntityType.ARMOR_STAND);
         }
         return BuiltInRegistries.ENTITY_TYPE.getOptional(snapshot.entityType())
                 .filter(type -> type != EntityType.PLAYER || policy.fallbackPlayerForms())
-                .map(type -> type == EntityType.PLAYER ? EntityType.ZOMBIE : type);
+                .map(type -> type == EntityType.PLAYER ? EntityType.ARMOR_STAND : type);
     }
 
     private static boolean createsLivingEntity(EntityType<?> type, ServerLevel level) {
@@ -222,9 +236,26 @@ public final class ImitatorReplicaApplicationAdapter implements TransformationAp
     private static void positionReplica(TransformationApplicationContext context, LivingEntity replica, ImitatorReplicaPolicy policy) {
         Vec3 look = context.owner().getLookAngle();
         Vec3 spawn = context.owner().position().add(look.x * policy.spawnDistance(), 0D, look.z * policy.spawnDistance());
-        replica.moveTo(spawn.x, context.owner().getY(), spawn.z, context.owner().getYRot() + 180F, 0F);
+        if (!moveToSafePosition(context.owner().serverLevel(), replica, spawn, context.owner().getYRot() + 180F)) {
+            throw new IllegalStateException("Replica could not find a safe spawn position");
+        }
         replica.fallDistance = 0F;
         replica.setDeltaMovement(Vec3.ZERO);
+    }
+
+    private static boolean moveToSafePosition(ServerLevel level, LivingEntity replica, Vec3 preferred, float yaw) {
+        int[][] offsets = {{0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {-1, 1}, {1, -1}, {-1, -1}, {2, 0}, {-2, 0}, {0, 2}, {0, -2}};
+        for (int[] offset : offsets) {
+            double x = preferred.x + offset[0];
+            double z = preferred.z + offset[1];
+            for (int vertical : new int[]{0, 1, -1, 2}) {
+                replica.moveTo(x, preferred.y + vertical, z, yaw, 0F);
+                if (level.getWorldBorder().isWithinBounds(replica.getBoundingBox()) && level.noCollision(replica)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static void applyVisualState(LivingEntity replica, IdentitySnapshot snapshot, double scale, ImitatorReplicaPolicy policy) {
@@ -232,14 +263,6 @@ public final class ImitatorReplicaApplicationAdapter implements TransformationAp
         if (!policy.namePrefix().isEmpty() || !snapshot.displayName().isBlank()) {
             replica.setCustomName(Component.literal(policy.namePrefix() + snapshot.displayName()));
             replica.setCustomNameVisible(true);
-        }
-        if (visualData.contains("equipment", Tag.TAG_COMPOUND)) {
-            CompoundTag equipment = visualData.getCompound("equipment");
-            for (EquipmentSlot slot : EquipmentSlot.values()) {
-                if (equipment.contains(slot.getName(), Tag.TAG_COMPOUND)) {
-                    itemStack(equipment.getCompound(slot.getName())).ifPresent(stack -> replica.setItemSlot(slot, stack));
-                }
-            }
         }
         double boundedScale = Math.max(0D, Math.min(1D, scale));
         if (visualData.contains("max_health", Tag.TAG_FLOAT) && replica.getAttribute(Attributes.MAX_HEALTH) != null) {
@@ -249,6 +272,10 @@ public final class ImitatorReplicaApplicationAdapter implements TransformationAp
         if (visualData.contains("health", Tag.TAG_FLOAT)) {
             replica.setHealth(Math.max(1F, Math.min(replica.getMaxHealth(), (float) (visualData.getFloat("health") * boundedScale))));
         }
+    }
+
+    private static CompoundTag visualEquipment(CompoundTag visualData) {
+        return visualData.contains("equipment", Tag.TAG_COMPOUND) ? visualData.getCompound("equipment").copy() : new CompoundTag();
     }
 
     private static void applyTensuraState(LivingEntity replica, IdentitySnapshot snapshot, double scale, ImitatorReplicaPolicy policy) {
@@ -265,29 +292,36 @@ public final class ImitatorReplicaApplicationAdapter implements TransformationAp
         }
     }
 
+    private static void applyRecordedSkills(LivingEntity replica, IdentitySnapshot snapshot, ImitatorReplicaPolicy policy, UUID sessionId, UUID referenceId) {
+        if (!policy.copyRecordedSkills()) {
+            return;
+        }
+        Optional<ImitatorSkillCopySnapshot> captured = ImitatorSkillCopyExtensions.find(snapshot.extensions());
+        if (captured.isEmpty()) {
+            return;
+        }
+        int lifetimeSeconds = Math.max(1, (policy.lifetimeTicks() + 19) / 20);
+        TemporarySkillOwnership ownership = new TemporarySkillOwnership(sessionId, referenceId);
+        for (var skill : captured.get().skills()) {
+            SkillOperationResult granted = ImitationApi.skillBridges().grantTemporary(replica, captured.get().bridgeId(), skill.skillId(), lifetimeSeconds, ownership);
+            if (!granted.successful()) {
+                throw new IllegalStateException("Replica could not receive copied skill " + skill.skillId() + ": " + granted.detail());
+            }
+            SkillOperationResult updated = ImitationApi.skillBridges().update(
+                    replica,
+                    captured.get().bridgeId(),
+                    new SkillUpdateRequest(skill.skillId(), Optional.of(skill.mastery()), Optional.empty(), Optional.empty(), Optional.of(lifetimeSeconds))
+            );
+            if (!updated.successful()) {
+                throw new IllegalStateException("Replica copied skill state could not be restored for " + skill.skillId() + ": " + updated.detail());
+            }
+        }
+    }
+
     private static void suppressEquipmentDrops(Mob mob) {
         for (EquipmentSlot slot : EquipmentSlot.values()) {
             mob.setDropChance(slot, 0F);
         }
-    }
-
-    private static Optional<ItemStack> itemStack(CompoundTag tag) {
-        if (!tag.contains("item", Tag.TAG_STRING)) {
-            return Optional.empty();
-        }
-        ResourceLocation itemId = ResourceLocation.tryParse(tag.getString("item"));
-        if (itemId == null) {
-            return Optional.empty();
-        }
-        Item item = BuiltInRegistries.ITEM.get(itemId);
-        if (item == Items.AIR) {
-            return Optional.empty();
-        }
-        ItemStack stack = new ItemStack(item, Math.max(1, Math.min(99, tag.getInt("count"))));
-        if (stack.isDamageableItem()) {
-            stack.setDamageValue(Math.max(0, tag.getInt("damage")));
-        }
-        return Optional.of(stack);
     }
 
     private static CompoundTag payload(LivingEntity replica, ServerLevel level, ImitatorReplicaPolicy policy, long expires) {

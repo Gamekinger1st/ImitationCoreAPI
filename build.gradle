@@ -15,6 +15,48 @@ base {
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
+def generatedGameTestResources = layout.buildDirectory.dir("generated/gametest-resources")
+def generateGameTestStructure = tasks.register("generateGameTestStructure") {
+    def outputFile = generatedGameTestResources.map { it.file("data/${mod_id}/structure/empty.nbt") }
+    outputs.file(outputFile)
+    doLast {
+        def target = outputFile.get().asFile
+        target.parentFile.mkdirs()
+        new DataOutputStream(new java.util.zip.GZIPOutputStream(new FileOutputStream(target))).withCloseable { nbt ->
+            nbt.writeByte(10)
+            nbt.writeUTF("")
+            nbt.writeByte(3)
+            nbt.writeUTF("DataVersion")
+            nbt.writeInt(3955)
+            nbt.writeByte(9)
+            nbt.writeUTF("size")
+            nbt.writeByte(3)
+            nbt.writeInt(3)
+            nbt.writeInt(5)
+            nbt.writeInt(5)
+            nbt.writeInt(5)
+            nbt.writeByte(9)
+            nbt.writeUTF("palette")
+            nbt.writeByte(10)
+            nbt.writeInt(1)
+            nbt.writeByte(8)
+            nbt.writeUTF("Name")
+            nbt.writeUTF("minecraft:air")
+            nbt.writeByte(0)
+            nbt.writeByte(9)
+            nbt.writeUTF("blocks")
+            nbt.writeByte(10)
+            nbt.writeInt(0)
+            nbt.writeByte(9)
+            nbt.writeUTF("entities")
+            nbt.writeByte(10)
+            nbt.writeInt(0)
+            nbt.writeByte(0)
+        }
+    }
+}
+sourceSets.main.resources.srcDir(generatedGameTestResources)
+
 repositories {
     mavenCentral()
     maven { url = 'https://www.cursemaven.com' }
@@ -36,6 +78,10 @@ neoForge {
             server()
             programArgument '--nogui'
         }
+        gameTestServer {
+            type = "gameTestServer"
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        }
     }
 
     mods {
@@ -46,14 +92,15 @@ neoForge {
 }
 
 dependencies {
-    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
     testImplementation platform('org.junit:junit-bom:5.11.4')
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testImplementation files(sourceSets.main.compileClasspath)
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testRuntimeOnly files(sourceSets.main.runtimeClasspath)
 }
 
 tasks.named('processResources', ProcessResources).configure {
+    dependsOn(generateGameTestStructure)
     def replaceProperties = [
         minecraft_version      : minecraft_version,
         minecraft_version_range: minecraft_version_range,
@@ -76,6 +123,21 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
 
+def generatedRefmap = layout.buildDirectory.file("generated/refmap/${mod_id}.refmap.json")
+def generateRefmap = tasks.register('generateRefmap') {
+    outputs.file(generatedRefmap)
+    doLast {
+        def target = generatedRefmap.get().asFile
+        target.parentFile.mkdirs()
+        target.setText('{"mappings":{},"data":{}}\n', 'UTF-8')
+    }
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    dependsOn(generateRefmap)
+    from(generatedRefmap)
+}
+
 tasks.withType(Test).configureEach {
     useJUnitPlatform()
 }
@@ -94,6 +156,42 @@ tasks.register('verifyPublicApiBoundary') {
     }
 }
 
+tasks.register('verifyReleaseJar') {
+    dependsOn(tasks.named('jar'))
+    def releaseJar = tasks.named('jar', Jar).flatMap { it.archiveFile }
+    inputs.file(releaseJar)
+    doLast {
+        def archive = new java.util.zip.ZipFile(releaseJar.get().asFile)
+        try {
+            def names = archive.entries().collect { it.name }.toSet()
+            def required = [
+                    'META-INF/neoforge.mods.toml',
+                    'pack.mcmeta',
+                    'imitationcoreapi.mixins.json',
+                    'imitationcoreapi.compat.mixins.json',
+                    'imitationcoreapi.refmap.json',
+                    'assets/imitationcoreapi/lang/en_us.json'
+            ]
+            def missing = required.findAll { !names.contains(it) }
+            if (!missing.isEmpty()) {
+                throw new GradleException("Release jar is missing required entries: ${missing.join(', ')}")
+            }
+            def forbidden = names.findAll { name ->
+                name.startsWith('run/') || name.endsWith('latest.log') || name.endsWith('imitationcoreapi-discord.properties')
+            }
+            if (!forbidden.isEmpty()) {
+                throw new GradleException("Release jar contains runtime or credential files: ${forbidden.join(', ')}")
+            }
+            def metadata = archive.getInputStream(archive.getEntry('META-INF/neoforge.mods.toml')).getText('UTF-8')
+            if (!metadata.contains('version="0.5.0"')) {
+                throw new GradleException('Release metadata does not declare version 0.5.0')
+            }
+        } finally {
+            archive.close()
+        }
+    }
+}
+
 tasks.named('check') {
-    dependsOn(tasks.named('verifyPublicApiBoundary'))
+    dependsOn(tasks.named('verifyPublicApiBoundary'), tasks.named('verifyReleaseJar'))
 }

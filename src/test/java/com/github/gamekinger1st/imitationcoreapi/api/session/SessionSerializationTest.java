@@ -4,7 +4,6 @@ import com.github.gamekinger1st.imitationcoreapi.api.compat.CompatibilityAssessm
 import com.github.gamekinger1st.imitationcoreapi.api.snapshot.BaselineSnapshot;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
-import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
@@ -22,7 +21,7 @@ class SessionSerializationTest {
         session = session.addTemporaryState(new TemporaryStateReference(
                 UUID.randomUUID(),
                 session.sessionId(),
-                ResourceLocation.withDefaultNamespace("temporary_item"),
+                TemporaryStateKinds.EFFECT,
                 new CompoundTag(),
                 TemporaryStateStatus.ACTIVE
         ), 4L);
@@ -50,7 +49,7 @@ class SessionSerializationTest {
         session = session.addTemporaryState(new TemporaryStateReference(
                 UUID.randomUUID(),
                 session.sessionId(),
-                ResourceLocation.withDefaultNamespace("temporary_item"),
+                TemporaryStateKinds.EFFECT,
                 new CompoundTag(),
                 TemporaryStateStatus.ACTIVE
         ), 3L);

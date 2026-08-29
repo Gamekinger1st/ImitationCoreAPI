@@ -4,6 +4,7 @@ import com.github.gamekinger1st.imitationcoreapi.api.compat.CompatibilityAssessm
 import com.github.gamekinger1st.imitationcoreapi.api.snapshot.BaselineSnapshot;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -28,6 +29,7 @@ public record TransformationSession(
         List<TemporaryStateReference> temporaryState
 ) {
     public static final int CURRENT_SCHEMA_VERSION = 1;
+    public static final int MAX_TEMPORARY_STATE_REFERENCES = 256;
 
     public TransformationSession(
             UUID sessionId,
@@ -77,6 +79,9 @@ public record TransformationSession(
         Objects.requireNonNull(expiresGameTime, "expiresGameTime");
         Objects.requireNonNull(failureDetail, "failureDetail");
         Objects.requireNonNull(temporaryState, "temporaryState");
+        if (temporaryState.size() > MAX_TEMPORARY_STATE_REFERENCES) {
+            throw new IllegalArgumentException("Transformation session has too many temporary state references");
+        }
         if (createdGameTime < 0 || updatedGameTime < createdGameTime || revision < 0) {
             throw new IllegalArgumentException("Invalid transformation session timing or revision");
         }
@@ -85,9 +90,13 @@ public record TransformationSession(
         }
         failureDetail = failureDetail.map(String::strip).filter(value -> !value.isEmpty()).map(value -> value.length() > 512 ? value.substring(0, 512) : value);
         temporaryState = List.copyOf(new ArrayList<>(temporaryState));
+        HashSet<UUID> referenceIds = new HashSet<>();
         for (TemporaryStateReference reference : temporaryState) {
             if (!sessionId.equals(reference.sessionId())) {
                 throw new IllegalArgumentException("Temporary state belongs to another session");
+            }
+            if (!referenceIds.add(reference.referenceId())) {
+                throw new IllegalArgumentException("Duplicate temporary state reference");
             }
         }
     }
@@ -151,6 +160,9 @@ public record TransformationSession(
         boolean found = false;
         for (TemporaryStateReference reference : temporaryState) {
             if (reference.referenceId().equals(referenceId)) {
+                if (!reference.status().canTransitionTo(status)) {
+                    throw new IllegalArgumentException("Illegal temporary-state transition: " + reference.status() + " -> " + status);
+                }
                 references.add(reference.withStatus(status));
                 found = true;
             } else {

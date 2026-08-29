@@ -13,6 +13,7 @@ import java.util.Optional;
 
 public final class ImitatorFormAbilityRegistry {
     private final Map<ResourceLocation, ImitatorFormAbility> abilities = new LinkedHashMap<>();
+    private final Map<java.util.UUID, Map<ResourceLocation, Long>> cooldowns = new java.util.concurrent.ConcurrentHashMap<>();
 
     public synchronized ImitatorFormAbilityRegistration register(ImitatorFormAbility ability) {
         Objects.requireNonNull(ability, "ability");
@@ -36,10 +37,14 @@ public final class ImitatorFormAbilityRegistry {
     }
 
     public List<ImitatorFormAbility> activeAbilities(IdentitySnapshot snapshot, ImitatorSkillCopyPolicy policy, ImitatorSkillCopyAccess access) {
+        return activeAbilities(snapshot, policy, access, false);
+    }
+
+    public List<ImitatorFormAbility> activeAbilities(IdentitySnapshot snapshot, ImitatorSkillCopyPolicy policy, ImitatorSkillCopyAccess access, boolean mastered) {
         Objects.requireNonNull(policy, "policy");
         Objects.requireNonNull(access, "access");
         return activeAbilities(snapshot).stream()
-                .filter(ability -> policy.allows(ability, snapshot, access))
+                .filter(ability -> policy.allows(ability, snapshot, access, mastered))
                 .toList();
     }
 
@@ -52,10 +57,14 @@ public final class ImitatorFormAbilityRegistry {
     }
 
     public List<ImitatorFormAbility> tickingAbilities(IdentitySnapshot snapshot, ImitatorSkillCopyPolicy policy, ImitatorSkillCopyAccess access) {
+        return tickingAbilities(snapshot, policy, access, false);
+    }
+
+    public List<ImitatorFormAbility> tickingAbilities(IdentitySnapshot snapshot, ImitatorSkillCopyPolicy policy, ImitatorSkillCopyAccess access, boolean mastered) {
         Objects.requireNonNull(policy, "policy");
         Objects.requireNonNull(access, "access");
         return tickingAbilities(snapshot).stream()
-                .filter(ability -> policy.allows(ability, snapshot, access))
+                .filter(ability -> policy.allows(ability, snapshot, access, mastered))
                 .toList();
     }
 
@@ -65,7 +74,7 @@ public final class ImitatorFormAbilityRegistry {
         ImitatorFormAbilityContext context = new ImitatorFormAbilityContext(player, snapshot);
         for (ImitatorFormAbility ability : activeAbilities(snapshot)) {
             try {
-                return Objects.requireNonNull(ability.activate(context), "form ability activation result");
+                return activateWithCooldown(ability, context);
             } catch (RuntimeException | LinkageError exception) {
                 return ImitatorActionResult.rejected("Copied form ability failed: " + ability.id());
             }
@@ -74,14 +83,18 @@ public final class ImitatorFormAbilityRegistry {
     }
 
     public ImitatorActionResult activate(ServerPlayer player, IdentitySnapshot snapshot, ImitatorSkillCopyPolicy policy, ImitatorSkillCopyAccess access) {
+        return activate(player, snapshot, policy, access, false);
+    }
+
+    public ImitatorActionResult activate(ServerPlayer player, IdentitySnapshot snapshot, ImitatorSkillCopyPolicy policy, ImitatorSkillCopyAccess access, boolean mastered) {
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(snapshot, "snapshot");
         Objects.requireNonNull(policy, "policy");
         Objects.requireNonNull(access, "access");
         ImitatorFormAbilityContext context = new ImitatorFormAbilityContext(player, snapshot);
-        for (ImitatorFormAbility ability : activeAbilities(snapshot, policy, access)) {
+        for (ImitatorFormAbility ability : activeAbilities(snapshot, policy, access, mastered)) {
             try {
-                return Objects.requireNonNull(ability.activate(context), "form ability activation result");
+                return activateWithCooldown(ability, context);
             } catch (RuntimeException | LinkageError exception) {
                 return ImitatorActionResult.rejected("Copied form ability failed: " + ability.id());
             }
@@ -102,12 +115,16 @@ public final class ImitatorFormAbilityRegistry {
     }
 
     public void tick(ServerPlayer player, IdentitySnapshot snapshot, ImitatorSkillCopyPolicy policy, ImitatorSkillCopyAccess access) {
+        tick(player, snapshot, policy, access, false);
+    }
+
+    public void tick(ServerPlayer player, IdentitySnapshot snapshot, ImitatorSkillCopyPolicy policy, ImitatorSkillCopyAccess access, boolean mastered) {
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(snapshot, "snapshot");
         Objects.requireNonNull(policy, "policy");
         Objects.requireNonNull(access, "access");
         ImitatorFormAbilityContext context = new ImitatorFormAbilityContext(player, snapshot);
-        for (ImitatorFormAbility ability : tickingAbilities(snapshot, policy, access)) {
+        for (ImitatorFormAbility ability : tickingAbilities(snapshot, policy, access, mastered)) {
             try {
                 ability.tick(context);
             } catch (RuntimeException | LinkageError exception) {
@@ -117,6 +134,25 @@ public final class ImitatorFormAbilityRegistry {
 
     public synchronized List<ImitatorFormAbility> abilities() {
         return orderedAbilities();
+    }
+
+    public void clearPlayer(java.util.UUID playerId) {
+        cooldowns.remove(Objects.requireNonNull(playerId, "playerId"));
+    }
+
+    private ImitatorActionResult activateWithCooldown(ImitatorFormAbility ability, ImitatorFormAbilityContext context) {
+        int cooldown = Math.max(0, ability.cooldownTicks(context.snapshot()));
+        long now = context.player().level().getGameTime();
+        Map<ResourceLocation, Long> playerCooldowns = cooldowns.computeIfAbsent(context.player().getUUID(), ignored -> new java.util.concurrent.ConcurrentHashMap<>());
+        long readyAt = playerCooldowns.getOrDefault(ability.id(), 0L);
+        if (now < readyAt) {
+            return ImitatorActionResult.rejected("Copied form ability is on cooldown for " + (readyAt - now) + " ticks");
+        }
+        ImitatorActionResult result = Objects.requireNonNull(ability.activate(context), "form ability activation result");
+        if (result.accepted() && cooldown > 0) {
+            playerCooldowns.put(ability.id(), Math.addExact(now, cooldown));
+        }
+        return result;
     }
 
     private boolean supports(ImitatorFormAbility ability, IdentitySnapshot snapshot) {

@@ -1,5 +1,6 @@
 package com.github.gamekinger1st.imitationcoreapi.api.chat;
 
+import com.github.gamekinger1st.imitationcoreapi.ImitationCoreApi;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.Comparator;
@@ -29,7 +30,18 @@ public final class ChatChannelRegistry {
 
     public Optional<ChatDelivery> route(ChatChannelRequest request) {
         Objects.requireNonNull(request, "request");
-        return provider(request.channelId()).filter(provider -> provider.acceptsPlayerMessages()).flatMap(provider -> provider.route(request));
+        Optional<ChatChannelProvider> provider = provider(request.channelId());
+        if (provider.isEmpty()) {
+            return Optional.empty();
+        }
+        try {
+            return provider.get().acceptsPlayerMessages()
+                    ? Objects.requireNonNull(provider.get().route(request), "chat channel route result")
+                    : Optional.empty();
+        } catch (RuntimeException | LinkageError exception) {
+            ImitationCoreApi.LOGGER.error("Chat channel provider {} failed", request.channelId(), exception);
+            return Optional.empty();
+        }
     }
 
     public synchronized java.util.List<ChatChannelProvider> providers() {

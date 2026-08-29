@@ -4,6 +4,7 @@ import com.github.gamekinger1st.imitationcoreapi.ImitationCoreApi;
 import com.github.gamekinger1st.imitationcoreapi.api.imitator.ImitatorActionResult;
 import com.github.gamekinger1st.imitationcoreapi.api.imitator.ImitatorFormAbility;
 import com.github.gamekinger1st.imitationcoreapi.api.imitator.ImitatorFormAbilityContext;
+import com.github.gamekinger1st.imitationcoreapi.api.service.ImitationCoreServices;
 import com.github.gamekinger1st.imitationcoreapi.api.snapshot.IdentitySnapshot;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
@@ -20,6 +21,8 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.projectile.Arrow;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.tags.EntityTypeTags;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -36,6 +39,7 @@ public final class DefaultImitatorFormAbilities {
     private static final ResourceLocation SPIDER = vanilla("spider");
     private static final ResourceLocation CAVE_SPIDER = vanilla("cave_spider");
     private static final ResourceLocation ENDERMAN = vanilla("enderman");
+    private static final ResourceLocation CREEPER = vanilla("creeper");
     private static final ResourceLocation ZOMBIE = vanilla("zombie");
     private static final ResourceLocation ZOMBIE_VILLAGER = vanilla("zombie_villager");
     private static final ResourceLocation DROWNED = vanilla("drowned");
@@ -48,20 +52,25 @@ public final class DefaultImitatorFormAbilities {
 
     public static List<ImitatorFormAbility> create() {
         return List.of(
-                active(id("skeleton_archer"), 100, Set.of(SKELETON, STRAY, WITHER_SKELETON, BOGGED), DefaultImitatorFormAbilities::shootArrow),
-                active(id("enderman_teleport"), 100, Set.of(ENDERMAN), DefaultImitatorFormAbilities::randomTeleport),
-                active(id("blade_tiger_voice_cannon"), 100, Set.of(BLADE_TIGER), DefaultImitatorFormAbilities::voiceCannon),
+                active(id("skeleton_archer"), 100, 20, Set.of(SKELETON, STRAY, WITHER_SKELETON, BOGGED), DefaultImitatorFormAbilities::shootArrow),
+                active(id("enderman_teleport"), 100, 100, Set.of(ENDERMAN), DefaultImitatorFormAbilities::randomTeleport),
+                active(id("creeper_explosion"), 100, 0, Set.of(CREEPER), DefaultImitatorFormAbilities::explodeLikeCreeper),
+                active(id("blade_tiger_voice_cannon"), 100, 80, Set.of(BLADE_TIGER), DefaultImitatorFormAbilities::voiceCannon),
                 ticking(id("spider_climb"), 10, Set.of(SPIDER, CAVE_SPIDER), DefaultImitatorFormAbilities::climbLikeSpider),
-                ticking(id("sun_sensitive_undead"), 0, Set.of(SKELETON, STRAY, BOGGED, ZOMBIE, ZOMBIE_VILLAGER, DROWNED, ZOMBIFIED_PIGLIN, PHANTOM), DefaultImitatorFormAbilities::burnLikeUndead)
+                ticking(id("sun_sensitive_undead"), 0, DefaultImitatorFormAbilities::isUndead, DefaultImitatorFormAbilities::burnLikeUndead)
         );
     }
 
-    private static ImitatorFormAbility active(ResourceLocation id, int priority, Set<ResourceLocation> entityTypes, ActiveHandler activeHandler) {
-        return new BuiltInAbility(id, priority, entityTypes, activeHandler, null);
+    private static ImitatorFormAbility active(ResourceLocation id, int priority, int cooldownTicks, Set<ResourceLocation> entityTypes, ActiveHandler activeHandler) {
+        return new BuiltInAbility(id, priority, cooldownTicks, snapshot -> entityTypes.contains(snapshot.entityType()), activeHandler, null);
     }
 
     private static ImitatorFormAbility ticking(ResourceLocation id, int priority, Set<ResourceLocation> entityTypes, TickHandler tickHandler) {
-        return new BuiltInAbility(id, priority, entityTypes, null, tickHandler);
+        return ticking(id, priority, snapshot -> entityTypes.contains(snapshot.entityType()), tickHandler);
+    }
+
+    private static ImitatorFormAbility ticking(ResourceLocation id, int priority, java.util.function.Predicate<IdentitySnapshot> supports, TickHandler tickHandler) {
+        return new BuiltInAbility(id, priority, 0, supports, null, tickHandler);
     }
 
     private static ImitatorActionResult shootArrow(ImitatorFormAbilityContext context) {
@@ -117,6 +126,21 @@ public final class DefaultImitatorFormAbilities {
         return ImitatorActionResult.accepted("Copied blade tiger used Voice Cannon");
     }
 
+    private static ImitatorActionResult explodeLikeCreeper(ImitatorFormAbilityContext context) {
+        ServerPlayer player = context.player();
+        boolean wasInvulnerable = player.isInvulnerable();
+        try {
+            player.setInvulnerable(true);
+            player.serverLevel().explode(player, player.getX(), player.getY(), player.getZ(), 3.0F, Level.ExplosionInteraction.MOB);
+        } finally {
+            player.setInvulnerable(wasInvulnerable);
+        }
+        var reverted = ImitationCoreServices.imitatorSkills(player).revert(player);
+        return reverted.accepted()
+                ? ImitatorActionResult.accepted("Copied creeper exploded and the form ended")
+                : ImitatorActionResult.rejected("Copied creeper exploded but the form could not end safely: " + reverted.message());
+    }
+
     private static void climbLikeSpider(ImitatorFormAbilityContext context) {
         ServerPlayer player = context.player();
         if (!player.horizontalCollision) {
@@ -131,14 +155,40 @@ public final class DefaultImitatorFormAbilities {
         ServerPlayer player = context.player();
         if (player.fireImmune()
                 || !player.level().isDay()
-                || player.isInWaterRainOrBubble()
-                || !player.getItemBySlot(EquipmentSlot.HEAD).isEmpty()) {
+                || player.isInWaterRainOrBubble()) {
+            return;
+        }
+        ItemStack helmet = player.getItemBySlot(EquipmentSlot.HEAD);
+        if (!helmet.isEmpty()) {
+            if (helmet.isDamageableItem() && player.getRandom().nextFloat() < 0.1F) {
+                helmet.hurtAndBreak(1, player, EquipmentSlot.HEAD);
+            }
             return;
         }
         BlockPos pos = BlockPos.containing(player.getX(), player.getEyeY(), player.getZ());
         if (player.level().canSeeSkyFromBelowWater(pos)) {
             player.igniteForSeconds(8.0F);
         }
+    }
+
+    private static boolean isUndead(IdentitySnapshot snapshot) {
+        try {
+            return net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getOptional(snapshot.entityType())
+                    .map(type -> type.is(EntityTypeTags.UNDEAD))
+                    .orElseGet(() -> isKnownUndead(snapshot.entityType()));
+        } catch (RuntimeException | LinkageError exception) {
+            return isKnownUndead(snapshot.entityType());
+        }
+    }
+
+    private static boolean isKnownUndead(ResourceLocation entityType) {
+        if (!ResourceLocation.DEFAULT_NAMESPACE.equals(entityType.getNamespace())) {
+            return false;
+        }
+        return switch (entityType.getPath()) {
+            case "bogged", "drowned", "husk", "phantom", "skeleton", "skeleton_horse", "stray", "wither", "wither_skeleton", "zoglin", "zombie", "zombie_horse", "zombie_villager", "zombified_piglin" -> true;
+            default -> false;
+        };
     }
 
     private static ResourceLocation vanilla(String path) {
@@ -159,16 +209,15 @@ public final class DefaultImitatorFormAbilities {
         void tick(ImitatorFormAbilityContext context);
     }
 
-    private record BuiltInAbility(ResourceLocation id, int priority, Set<ResourceLocation> entityTypes, ActiveHandler activeHandler, TickHandler tickHandler) implements ImitatorFormAbility {
+    private record BuiltInAbility(ResourceLocation id, int priority, int cooldownTicks, java.util.function.Predicate<IdentitySnapshot> supports, ActiveHandler activeHandler, TickHandler tickHandler) implements ImitatorFormAbility {
         private BuiltInAbility {
             Objects.requireNonNull(id, "id");
-            Objects.requireNonNull(entityTypes, "entityTypes");
-            entityTypes = Set.copyOf(entityTypes);
+            Objects.requireNonNull(supports, "supports");
         }
 
         @Override
         public boolean supports(IdentitySnapshot snapshot) {
-            return entityTypes.contains(snapshot.entityType());
+            return supports.test(snapshot);
         }
 
         @Override
@@ -179,6 +228,11 @@ public final class DefaultImitatorFormAbilities {
         @Override
         public ImitatorActionResult activate(ImitatorFormAbilityContext context) {
             return activeHandler == null ? ImitatorFormAbility.super.activate(context) : activeHandler.activate(context);
+        }
+
+        @Override
+        public int cooldownTicks(IdentitySnapshot snapshot) {
+            return cooldownTicks;
         }
 
         @Override

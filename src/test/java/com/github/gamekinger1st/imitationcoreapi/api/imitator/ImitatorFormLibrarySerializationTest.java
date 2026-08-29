@@ -99,8 +99,8 @@ class ImitatorFormLibrarySerializationTest {
 
         ImitatorFormLibraryState migrated = ImitatorFormLibrarySerialization.fromTag(serialized);
 
-        org.junit.jupiter.api.Assertions.assertFalse(migrated.forms().get(0).skillCopyAllowed());
-        org.junit.jupiter.api.Assertions.assertFalse(migrated.pendingRecord().orElseThrow().skillCopyAllowed());
+        org.junit.jupiter.api.Assertions.assertTrue(migrated.forms().get(0).skillCopyAllowed());
+        org.junit.jupiter.api.Assertions.assertTrue(migrated.pendingRecord().orElseThrow().skillCopyAllowed());
     }
 
     @Test

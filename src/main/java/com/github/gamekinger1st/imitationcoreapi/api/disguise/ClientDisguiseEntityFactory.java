@@ -6,10 +6,11 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.DefaultPlayerSkin;
 import net.minecraft.client.resources.PlayerSkin;
-import net.minecraft.network.chat.Component;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -23,10 +24,12 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 public final class ClientDisguiseEntityFactory {
+    private static final int MAX_CACHED_ENTITIES = 256;
     private final Map<UUID, CachedEntity> entities = new LinkedHashMap<>();
 
     public synchronized Optional<Entity> createOrUpdate(ClientLevel level, Entity subject, ClientDisguiseState state) {
@@ -51,14 +54,14 @@ public final class ClientDisguiseEntityFactory {
             }
         }
         entity.moveTo(subject.getX(), subject.getY(), subject.getZ(), subject.getYRot(), subject.getXRot());
+        entity.tickCount = subject.tickCount;
         entity.setDeltaMovement(subject.getDeltaMovement());
         entity.setPose(subject.getPose());
         applyVisualData(entity, state.visualData());
-        if (entity instanceof RemotePlayer) {
-            entity.setCustomName(state.displayName().isBlank() ? null : Component.literal(state.displayName()));
-            entity.setCustomNameVisible(!state.displayName().isBlank());
-        }
         entities.put(state.sessionId(), new CachedEntity(entity, state.ownerId(), state.snapshotId(), state.revision(), state.playerProfile()));
+        while (entities.size() > MAX_CACHED_ENTITIES) {
+            entities.remove(entities.keySet().iterator().next());
+        }
         return Optional.of(entity);
     }
 
@@ -69,6 +72,14 @@ public final class ClientDisguiseEntityFactory {
     public synchronized void clearByOwner(UUID ownerId) {
         Objects.requireNonNull(ownerId, "ownerId");
         entities.entrySet().removeIf(entry -> entry.getValue().ownerId().equals(ownerId));
+    }
+
+    public synchronized Set<UUID> sessionIdsForOwner(UUID ownerId) {
+        Objects.requireNonNull(ownerId, "ownerId");
+        return entities.entrySet().stream()
+                .filter(entry -> entry.getValue().ownerId().equals(ownerId))
+                .map(Map.Entry::getKey)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     public synchronized void clearAll() {
@@ -107,6 +118,12 @@ public final class ClientDisguiseEntityFactory {
     }
 
     private Optional<ItemStack> itemStack(CompoundTag tag) {
+        if (tag.contains("stack", Tag.TAG_COMPOUND)) {
+            ItemStack parsed = ItemStack.parseOptional(Minecraft.getInstance().level.registryAccess(), tag.getCompound("stack"));
+            if (!parsed.isEmpty()) {
+                return Optional.of(parsed);
+            }
+        }
         if (!tag.contains("item", Tag.TAG_STRING)) {
             return Optional.empty();
         }
@@ -121,6 +138,9 @@ public final class ClientDisguiseEntityFactory {
         ItemStack stack = new ItemStack(item, Math.max(1, Math.min(99, tag.getInt("count"))));
         if (stack.isDamageableItem()) {
             stack.setDamageValue(Math.max(0, tag.getInt("damage")));
+        }
+        if (tag.getBoolean("enchanted")) {
+            stack.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
         }
         return Optional.of(stack);
     }

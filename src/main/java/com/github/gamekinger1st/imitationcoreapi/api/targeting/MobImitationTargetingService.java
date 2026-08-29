@@ -31,6 +31,9 @@ public final class MobImitationTargetingService {
     private static final String ACTIVE_FORM_TAG = "ImitationCoreAPI.ActiveForm";
     private static final Map<ResourceLocation, Boolean> MOB_FORM_CACHE = new ConcurrentHashMap<>();
     private static final Set<String> FACTION_RESOLVER_DIAGNOSTICS = ConcurrentHashMap.newKeySet();
+    private static final net.minecraft.tags.TagKey<EntityType<?>> TENSURA_HOSTILE = entityTag("tensura", "hostile_monster");
+    private static final net.minecraft.tags.TagKey<EntityType<?>> TENSURA_NEUTRAL = entityTag("tensura", "neutral_monster");
+    private static final net.minecraft.tags.TagKey<EntityType<?>> TENSURA_ANIMAL_PREY = entityTag("tensura", "animal_prey");
 
     private final TransformationService transformations;
     private final MobFactionRegistry factions;
@@ -61,6 +64,9 @@ public final class MobImitationTargetingService {
         MobFactionResolution aggressorFaction = factions.resolveWithStatus(aggressorType);
         MobFactionResolution formFaction = factions.resolveWithStatus(formType.get());
         diagnoseFallbackFaction(target, aggressorFaction, formFaction);
+        if (isNaturalPrey(aggressorType, formType.get())) {
+            return false;
+        }
         return shouldSuppressResolvedTarget(aggressorFaction, formFaction, false);
     }
 
@@ -177,6 +183,17 @@ public final class MobImitationTargetingService {
             return false;
         }
         return aggressorFaction.factionId().equals(formFaction.factionId());
+    }
+
+    private static boolean isNaturalPrey(ResourceLocation aggressorType, ResourceLocation formType) {
+        Optional<EntityType<?>> aggressor = BuiltInRegistries.ENTITY_TYPE.getOptional(aggressorType);
+        Optional<EntityType<?>> form = BuiltInRegistries.ENTITY_TYPE.getOptional(formType);
+        return aggressor.filter(type -> type.is(TENSURA_HOSTILE) || type.is(TENSURA_NEUTRAL)).isPresent()
+                && form.filter(type -> type.is(TENSURA_ANIMAL_PREY)).isPresent();
+    }
+
+    private static net.minecraft.tags.TagKey<EntityType<?>> entityTag(String namespace, String path) {
+        return net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.ENTITY_TYPE, ResourceLocation.fromNamespaceAndPath(namespace, path));
     }
 
     private static void diagnoseFallbackFaction(ServerPlayer target, MobFactionResolution aggressorFaction, MobFactionResolution formFaction) {
